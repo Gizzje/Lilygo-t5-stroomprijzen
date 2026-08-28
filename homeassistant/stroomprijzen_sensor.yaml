@@ -1,0 +1,131 @@
+# ============================================================================
+# Home Assistant: dagprijzen (of morgen-prijzen) als CSV-string
+# ============================================================================
+# LET OP: dit bestand wordt aangeroepen als "template: !include stroomprijzen_sensor.yaml"
+# vanuit configuration.yaml. Daarom staat hier GEEN "template:"-regel meer
+# bovenaan - die context komt al mee via de include-regel in configuration.yaml.
+# Dit bestand is dus direct de lijst die normaal onder "template:" zou staan.
+#
+# >>> VALKUIL: heb je al een "template:"-blok in configuration.yaml, dan
+# >>> overschrijft YAML de ene sleutel stilzwijgend met de andere. Geen
+# >>> foutmelding, "Controleer configuratie" blijft groen, maar de sensor
+# >>> wordt nooit aangemaakt. Zet alles onder EEN template:-sleutel.
+#
+# Doel: de ESPHome T5 4.7" haalt de volledige dagprijs-array niet rechtstreeks
+# uit de "Nord Pool"-integratie, want de moderne (core) Nord Pool-integratie
+# publiceert alleen huidige/vorige/volgende/hoogste/laagste prijs als losse
+# sensoren. De volledige lijst van uurprijzen is alleen op te vragen via de
+# service/actie "nordpool.get_prices_for_date".
+#
+# Ververs-schema (bewust NIET elk uur):
+#   - bij HA-opstart                     -> vult de sensor meteen
+#   - elke dag om 00:05                  -> haalt de prijzen van de nieuwe dag
+#   - elke dag om 22:00                  -> haalt al de prijzen van MORGEN op
+#     (day-ahead prijzen zijn normaal al rond 13:00 de dag ervoor bekend, dus
+#     dat is er dan al; zo kun je 's avonds vóór het slapengaan meteen zien of
+#     je de vaatwasser 's nachts kunt laten draaien of beter kunt wachten tot
+#     morgenmiddag)
+#   - handmatig verversen op het scherm zelf (de fysieke knop) ververst alleen
+#     de tekening, niet deze sensor - dat hoeft niet, de prijzen zelf
+#     veranderen toch niet meer zodra ze gepubliceerd zijn.
+#
+# De sensor-state is een CSV-string (EUR/kWh, 3 decimalen, bv.
+# "0.199,0.194,0.183,..."), kort genoeg (~190 tekens voor 24 waarden) om
+# binnen de HA state-limiet van 255 tekens te passen. Een attribuut "toont"
+# vertelt de firmware of het om vandaag of morgen gaat, zodat het scherm de
+# titel en de "huidige prijs"-weergave daarop aanpast.
+#
+# INSTALLATIE
+# 1. Zet dit bestand in je config-map (zelfde map als configuration.yaml),
+#    onder de naam stroomprijzen_sensor.yaml.
+# 2. Zorg dat configuration.yaml deze regel bevat:
+#      template: !include stroomprijzen_sensor.yaml
+# 3. Vul hieronder je eigen config_entry in (zie de opmerking daar).
+# 4. Developer Tools > YAML > "Controleer configuratie" - moet groen zijn.
+# 5. Developer Tools > YAML > "Template entities" herladen (of herstart HA
+#    eenmalig om ook meteen de "homeassistant start"-trigger af te vuren).
+#
+# Pas "areas" en "currency" aan als je geen NL/EUR gebruikt.
+# ============================================================================
+
+- trigger:
+    - trigger: homeassistant
+      event: start
+    - trigger: time_pattern
+      hours: "0"
+      minutes: "5"
+    - trigger: time_pattern
+      hours: "22"
+      minutes: "0"
+  action:
+    - action: nordpool.get_prices_for_date
+      data:
+        # >>> VUL JE EIGEN CONFIG ENTRY ID IN <<<
+        # Te vinden via Instellingen > Apparaten & diensten > Nord Pool >
+        # klik de integratie aan; het ID staat in de URL na /config_entry/.
+        # Of via Developer Tools > Acties > nordpool.get_prices_for_date,
+        # daar staat hij in de keuzelijst.
+        config_entry: YOUR_NORDPOOL_CONFIG_ENTRY_ID
+        # Vanaf 22:00 al de prijzen van morgen ophalen; de rest van de dag
+        # gewoon vandaag. Om 00:05 wordt "morgen" vanzelf "vandaag" (zelfde
+        # datum, dus geen dubbel werk).
+        date: >
+          {{ (now().date() + timedelta(days=1)) if now().hour >= 22 else now().date() }}
+        areas: ["NL"]
+        currency: "EUR"
+      response_variable: np_data
+  sensor:
+    - name: "Stroomprijzen vandaag CSV"
+      unique_id: stroomprijzen_vandaag_csv
+      icon: mdi:transmission-tower
+      # Nord Pool NL levert tegenwoordig kwartierprijzen (96 per dag) in
+      # plaats van uurprijzen. Die passen als losse waarden niet meer
+      # binnen de HA state-limiet van 255 tekens, dus we middelen ze hier
+      # per (lokaal!) uur tot weer 24 (of 23/25 op DST-dagen) waarden.
+      state: >
+        {% set ns = namespace(prices=[], cur_hour=none, cur_sum=0.0, cur_cnt=0) %}
+        {% for p in (np_data.NL | sort(attribute='start')) %}
+          {% set h = (p.start | as_datetime | as_local).hour %}
+          {% if ns.cur_hour is none %}
+            {% set ns.cur_hour = h %}
+          {% endif %}
+          {% if h != ns.cur_hour %}
+            {% set ns.prices = ns.prices + [ (ns.cur_sum / ns.cur_cnt / 1000) | round(3) ] %}
+            {% set ns.cur_hour = h %}
+            {% set ns.cur_sum = 0.0 %}
+            {% set ns.cur_cnt = 0 %}
+          {% endif %}
+          {% set ns.cur_sum = ns.cur_sum + p.price %}
+          {% set ns.cur_cnt = ns.cur_cnt + 1 %}
+        {% endfor %}
+        {% if ns.cur_cnt > 0 %}
+          {% set ns.prices = ns.prices + [ (ns.cur_sum / ns.cur_cnt / 1000) | round(3) ] %}
+        {% endif %}
+        {{ ns.prices | join(',') }}
+      attributes:
+        toont: "{{ 'morgen' if now().hour >= 22 else 'vandaag' }}"
+        datum: >
+          {{ ((now() + timedelta(days=1)) if now().hour >= 22 else now()).strftime('%d-%m-%Y') }}
+        aantal_uren: >
+          {% set ns2 = namespace(hours=[]) %}
+          {% for p in np_data.NL %}
+            {% set h = (p.start | as_datetime | as_local).hour %}
+            {% if h not in ns2.hours %}
+              {% set ns2.hours = ns2.hours + [h] %}
+            {% endif %}
+          {% endfor %}
+          {{ ns2.hours | length }}
+        laatst_opgehaald: "{{ now().isoformat() }}"
+
+# ----------------------------------------------------------------------------
+# Let op DST-dagen (laatste zondag van maart/oktober): dan bevat de dag 23 of
+# 25 uur in plaats van 24. De sensor geeft dan gewoon 23 of 25 waarden door;
+# de ESPHome-firmware verdeelt de balken automatisch over het aantal waarden
+# dat binnenkomt, dus dat blijft werken - alleen klopt de uur-highlight op
+# die twee dagen per jaar niet exact met het klokuur.
+#
+# Als om 22:00 de prijzen van morgen nog niet gepubliceerd zijn (zeldzaam,
+# maar kan bv. bij een storing bij Nord Pool), faalt deze actie gewoon en
+# behoudt de sensor zijn laatste (vandaag-)waarde totdat de volgende trigger
+# succesvol is.
+# ----------------------------------------------------------------------------

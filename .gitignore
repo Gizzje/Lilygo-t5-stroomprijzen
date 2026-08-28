@@ -1,0 +1,19 @@
+# Nooit committen: echte secrets
+secrets.yaml
+esphome/secrets.yaml
+
+# ESPHome build-rommel
+.esphome/
+esphome/.esphome/
+*.bin
+*.elf
+*.map
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,455 @@
+substitutions:
+  esp_name: T5 Prijzen        # weergavenaam in Home Assistant
+  esp_hostname: t5-prijzen    # hostname / mDNS-naam
+
+  # Optioneel: vast IP. Laat staan als commentaar voor DHCP.
+  #ip_address: 192.168.1.50
+  #ip_gw: 192.168.1.1
+  #ip_netmask: 255.255.255.0
+
+  run_time: 2min        # veiligheidsklep: hierna wordt sowieso geslapen, ook als er iets misgaat
+  fallback_sleep: 20min # noodval-slaapduur als de tijd nog niet gesynchroniseerd is
+
+esphome:
+  name: ${esp_hostname}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  ap:
+    ssid: "${esp_name} Fallback Hotspot"
+    # password: !secret ap_password
+
+deep_sleep:
+  run_duration: ${run_time}
+  sleep_duration: ${fallback_sleep}
+  id: deep_sleep_1
+  esp32_ext1_wakeup:
+    pins:
+      - number: GPIO39
+        allow_other_uses: true   # GPIO39 is ook Button 1
+    mode: ALL_LOW
+
+captive_portal:
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+    # Zodra een OTA-upload begint mag deep sleep hem niet meer onderbreken.
+    on_begin:
+      then:
+        - globals.set:
+            id: stay_awake
+            value: 'true'
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+spi:
+  clk_pin: 18
+  mosi_pin: 23
+
+# ----------------------------------------------------------------------------
+# Fonts: ALLE fonts staan bewust op @700 (bold).
+# Op dit e-paperpaneel halen 1 pixel dunne letterstokken met de GC16-waveform
+# geen vol zwart; ze ogen grijzig. Zwaarder gewicht lost dat op, een grotere
+# maat of "meer contrast" niet. Zie docs/troubleshooting.md.
+# ----------------------------------------------------------------------------
+font:
+  - file: "gfonts://Roboto@700"
+    id: font_title
+    size: 30
+    glyphs: &glyphs " %'(),-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+  - file: "gfonts://Roboto@700"
+    id: font_price_big
+    size: 62
+    glyphs: *glyphs
+  - file: "gfonts://Roboto@700"
+    id: font_price_unit
+    size: 22
+    glyphs: *glyphs
+  - file: "gfonts://Roboto@700"
+    id: font_axis
+    size: 20
+    glyphs: *glyphs
+  - file: "gfonts://Roboto@700"
+    id: font_footer
+    size: 21
+    glyphs: *glyphs
+  - file: "gfonts://Roboto@700"
+    id: font_footer_bold
+    size: 21
+    glyphs: *glyphs
+  - file: "gfonts://Roboto@700"
+    id: font_small
+    size: 16
+    glyphs: *glyphs
+
+button:
+  - platform: restart
+    name: "${esp_name} Restart"
+
+  - platform: template
+    name: "${esp_name} Refresh"
+    icon: "mdi:update"
+    on_press:
+      then:
+        - component.update: t5_display
+
+binary_sensor:
+  # Bovenste zijknop: wekt het apparaat uit deep sleep en hertekent het scherm.
+  - platform: gpio
+    pin:
+      number: GPIO39
+      inverted: true
+      allow_other_uses: true
+    name: "${esp_name} Button 1"
+    on_press:
+      then:
+        - component.update: t5_display
+
+  # Onderhoudsknop: houdt het apparaat wakker zodat je rustig kunt OTA'en.
+  - platform: gpio
+    pin:
+      number: GPIO34
+      inverted: true
+    name: "${esp_name} Button 2"
+    on_press:
+      then:
+        - globals.set:
+            id: stay_awake
+            value: 'true'
+        - logger.log: "Stay-awake aan - apparaat blijft wakker voor OTA"
+
+  - platform: gpio
+    pin:
+      number: GPIO35
+      inverted: true
+    name: "${esp_name} Button 3"
+
+sensor:
+  - platform: adc
+    pin: GPIO36
+    name: "${esp_name} Battery Voltage"
+    id: batt_volt
+    attenuation: 12db
+    update_interval: 300s
+    filters:
+      - multiply: 2
+
+  - platform: template
+    name: "${esp_name} Battery"
+    id: batt
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: battery
+    lambda: |-
+      int y = (1-(4.1-id(batt_volt).state)/(4.1-3.3))*100;
+      if (y < 100) {return y;} else {return 100;};
+    update_interval: 300s
+
+text_sensor:
+  - platform: homeassistant
+    id: prices_csv
+    entity_id: sensor.stroomprijzen_vandaag_csv
+    on_value:
+      then:
+        - delay: 3s
+        - script.execute: all_data_received
+  - platform: homeassistant
+    id: prices_shows
+    entity_id: sensor.stroomprijzen_vandaag_csv
+    attribute: toont
+  - platform: homeassistant
+    id: prices_date
+    entity_id: sensor.stroomprijzen_vandaag_csv
+    attribute: datum
+
+globals:
+  # Blokkeert deep sleep. Let op: deep_sleep.enter roept begin_sleep(true) aan
+  # en negeert daarmee deep_sleep.prevent -- een prevent-actie alleen werkt dus
+  # NIET. Vandaar deze vlag plus de wait_until in enter_sleep.
+  - id: stay_awake
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+script:
+  - id: all_data_received
+    then:
+      - component.update: batt_volt
+      - component.update: batt
+      - component.update: t5_display
+      - script.execute: enter_sleep
+
+  - id: enter_sleep
+    then:
+      # 10 seconden wakker blijven geeft een comfortabel OTA-venster bij elke
+      # wake. Kost ~20 s extra wakker per dag; verwaarloosbaar op accu.
+      - delay: 10s
+      - wait_until:
+          condition:
+            lambda: 'return !id(stay_awake);'
+      - deep_sleep.enter:
+          id: deep_sleep_1
+          sleep_duration: !lambda |-
+            auto t = id(ha_time).now();
+            if (!t.is_valid()) {
+              return (uint32_t)(5 * 60 * 1000);  // tijd nog onbekend: probeer over 5 min opnieuw
+            }
+            int now_s = t.hour * 3600 + t.minute * 60 + t.second;
+            // buffer na 00:05/22:00 zodat de HA-sensor gegarandeerd al bijgewerkt is
+            const int target1 = 0 * 3600 + 7 * 60;    // 00:07
+            const int target2 = 22 * 3600 + 2 * 60;   // 22:02
+            int next_s;
+            if (now_s < target1) {
+              next_s = target1;
+            } else if (now_s < target2) {
+              next_s = target2;
+            } else {
+              next_s = target1 + 24 * 3600;
+            }
+            int wait_s = next_s - now_s;
+            if (wait_s < 60) wait_s = 60;  // voorkom razendsnelle wake-loop
+            ESP_LOGI("stroomprijzen", "Ga %d seconden slapen", wait_s);
+            return (uint32_t)(wait_s * 1000);
+
+# VERPLICHT. epdiy alloceert de framebuffers met MALLOC_CAP_SPIRAM. Zonder dit
+# blok crasht de firmware direct bij het opstarten in een boot loop met
+# "assert failed: epd_hl_init highlevel.c:44 (state.back_fb != NULL)".
+# De Arduino-vlag -DBOARD_HAS_PSRAM is onder de ESP-IDF-toolchain niet genoeg.
+psram:
+  mode: quad
+  speed: 80MHZ
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [lilygo_t5_47_display]
+
+display:
+  - platform: lilygo_t5_47_display
+    # clear: true doet één hardware-wispuls per boot. Nodig, want na elke
+    # deep-sleep-wake denkt epdiy dat het scherm wit is terwijl er nog het
+    # vorige beeld staat -- zonder wis krijg je ghosting.
+    clear: true
+    id: t5_display
+    rotation: 0
+    update_interval: never
+    lambda: |-
+      const auto black = Color(0, 0, 0);
+
+      // ---- 1. CSV met dagprijzen (EUR/kWh) inlezen en parsen ----------------
+      std::string csv = id(prices_csv).state;
+      std::vector<float> prices;
+      if (!csv.empty() && csv != "unknown" && csv != "unavailable") {
+        size_t pos = 0;
+        while (true) {
+          size_t comma = csv.find(',', pos);
+          std::string token = (comma == std::string::npos) ? csv.substr(pos) : csv.substr(pos, comma - pos);
+          if (!token.empty() && (isdigit((unsigned char) token[0]) || token[0] == '-' || token[0] == '.')) {
+            prices.push_back(atof(token.c_str()));
+          }
+          if (comma == std::string::npos) break;
+          pos = comma + 1;
+        }
+      }
+
+      // ---- 2. Titel/header (altijd tonen, ook zonder data) -------------------
+      // "toont"-attribuut uit HA bepaalt of dit vandaag of morgen is.
+      bool is_today = (id(prices_shows).state != "morgen");
+      it.print(20, 14, id(font_title), black, TextAlign::TOP_LEFT,
+               is_today ? "Stroomprijzen vandaag" : "Stroomprijzen morgen");
+
+      std::string datebuf = id(prices_date).state;
+      it.print(20, 52, id(font_footer), black, TextAlign::TOP_LEFT, datebuf.c_str());
+      it.line(0, 114, 960, 114, black);
+
+      if (prices.empty()) {
+        it.print(480, 270, id(font_title), black, TextAlign::CENTER,
+                 "Wachten op prijsdata uit Home Assistant...");
+        return;
+      }
+
+      // ---- 3. Statistiek berekenen -------------------------------------------
+      int count = (int) prices.size();
+      float price_min = prices[0], price_max = prices[0], sum = 0;
+      int idx_min = 0, idx_max = 0;
+      for (int i = 0; i < count; i++) {
+        if (prices[i] < price_min) { price_min = prices[i]; idx_min = i; }
+        if (prices[i] > price_max) { price_max = prices[i]; idx_max = i; }
+        sum += prices[i];
+      }
+      float avg = sum / count;
+
+      int current_idx = 0;
+      if (id(ha_time).now().is_valid()) {
+        int hour = id(ha_time).now().hour;
+        current_idx = hour < count ? hour : count - 1;
+      }
+
+      // ---- 4. Rechtsboven: bij "vandaag" de huidige prijs, bij "morgen" het
+      //         goedkoopste moment van de getoonde dag -------------------------
+      if (is_today) {
+        char cur_buf[16];
+        snprintf(cur_buf, sizeof(cur_buf), "%.1f", prices[current_idx] * 100.0f);
+        for (char *p = cur_buf; *p; p++) if (*p == '.') *p = ',';
+        it.print(940, 4, id(font_price_big), black, TextAlign::TOP_RIGHT, cur_buf);
+        it.print(940, 84, id(font_price_unit), black, TextAlign::TOP_RIGHT, "ct/kWh nu");
+      } else {
+        char min_buf[16];
+        snprintf(min_buf, sizeof(min_buf), "%.1f", price_min * 100.0f);
+        for (char *p = min_buf; *p; p++) if (*p == '.') *p = ',';
+        it.print(940, 4, id(font_price_big), black, TextAlign::TOP_RIGHT, min_buf);
+        char sub[28];
+        snprintf(sub, sizeof(sub), "ct goedkoopst om %02d:00", (int) roundf(idx_min * 24.0f / count));
+        it.print(940, 84, id(font_price_unit), black, TextAlign::TOP_RIGHT, sub);
+      }
+
+      // ---- 5. Grafiek instellingen --------------------------------------------
+      // chart_w is 830 (niet 860): anders valt het "gem"-label rechts buiten
+      // het 960 px brede paneel.
+      const int chart_x = 60, chart_y = 130, chart_w = 830, chart_h = 260;
+      const int baseline_y = chart_y + chart_h;
+
+      float range = price_max - price_min;
+      if (range < 0.001f) range = 0.01f;
+      float disp_min = price_min - range * 0.1f;
+      if (disp_min > 0) disp_min = 0;             // toon 0-lijn als alles positief is
+      float disp_max = price_max + range * 0.18f;
+      if (disp_max <= disp_min) disp_max = disp_min + 0.01f;
+      float disp_range = disp_max - disp_min;
+
+      auto val_to_y = [&](float v) -> int {
+        float frac = (v - disp_min) / disp_range;
+        return baseline_y - (int) (frac * chart_h);
+      };
+
+      // ---- 6. Hulplijnen ------------------------------------------------------
+      int y_max_line = val_to_y(price_max);
+      int y_avg_line = val_to_y(avg);
+      int y_min_line = val_to_y(price_min);
+
+      // Lichtgrijs, niet zwart: zwarte stippellijnen concurreren met de balken.
+      const auto grid = Color(180, 180, 180);
+      for (int gy = chart_y; gy <= baseline_y; gy += chart_h / 4) {
+        it.line(chart_x, gy, chart_x + chart_w, gy, grid);
+      }
+
+      char lbl[12];
+      snprintf(lbl, sizeof(lbl), "%.1f", price_max * 100.0f);
+      for (char *p = lbl; *p; p++) if (*p == '.') *p = ',';
+      it.print(chart_x - 8, y_max_line, id(font_axis), black, TextAlign::CENTER_RIGHT, lbl);
+
+      snprintf(lbl, sizeof(lbl), "%.1f", price_min * 100.0f);
+      for (char *p = lbl; *p; p++) if (*p == '.') *p = ',';
+      it.print(chart_x - 8, y_min_line, id(font_axis), black, TextAlign::CENTER_RIGHT, lbl);
+
+      // ---- 7. Balken per uur ---------------------------------------------------
+      int gap = 3;
+      int bar_w = (chart_w - (count - 1) * gap) / count;
+      int label_step = count / 8;
+      if (label_step < 1) label_step = 1;
+
+      for (int i = 0; i < count; i++) {
+        int bar_x = chart_x + i * (bar_w + gap);
+        int top_y = val_to_y(prices[i]);
+        int h = baseline_y - top_y;
+        if (h < 1) h = 1;
+
+        if (i == current_idx) {
+          // huidig uur: volledig zwart gevuld + dikkere rand
+          it.filled_rectangle(bar_x, top_y, bar_w, h, black);
+          it.rectangle(bar_x - 1, top_y - 1, bar_w + 2, h + 1, black);
+        } else {
+          // Massieve grijsvulling: hoe duurder, hoe donkerder. Het paneel doet
+          // 16 grijswaarden. Arcering met 1 px lijnen (de oorspronkelijke
+          // aanpak) is op e-paper vrijwel onleesbaar.
+          float norm = (prices[i] - price_min) / range;
+          if (norm < 0) norm = 0;
+          if (norm > 1) norm = 1;
+          int g = (int) (200.0f - norm * 140.0f);
+          if (g < 0) g = 0;
+          if (g > 255) g = 255;
+          it.filled_rectangle(bar_x, top_y, bar_w, h, Color(g, g, g));
+          it.rectangle(bar_x, top_y, bar_w, h, black);
+        }
+
+        // uur-labels op de x-as
+        if (i % label_step == 0) {
+          int hour_label = (int) roundf(i * 24.0f / count);
+          char hb[4];
+          snprintf(hb, sizeof(hb), "%02d", hour_label);
+          it.print(bar_x + bar_w / 2, baseline_y + 6, id(font_axis), black, TextAlign::TOP_CENTER, hb);
+        }
+      }
+
+      // Gemiddelde-lijn NA de balken, zodat hij er bovenop ligt.
+      for (int gx = chart_x; gx < chart_x + chart_w; gx += 10) {
+        it.line(gx, y_avg_line, gx + 5, y_avg_line, black);
+      }
+      it.print(chart_x + chart_w + 8, y_avg_line, id(font_axis), black, TextAlign::CENTER_LEFT, "gem");
+
+      // pijltje boven de huidige balk (alleen zinvol bij "vandaag")
+      if (is_today) {
+        int cur_bar_x = chart_x + current_idx * (bar_w + gap) + bar_w / 2;
+        it.filled_triangle(cur_bar_x - 6, chart_y - 14, cur_bar_x + 6, chart_y - 14, cur_bar_x, chart_y - 2, black);
+      }
+
+      // rondje boven de goedkoopste balk (altijd zichtbaar, ook bij "morgen"),
+      // met een dun lijntje naar de top van de balk zodat duidelijk is welke
+      // balk het betreft (vooral handig als die balk laag/kort is)
+      int min_bar_x = chart_x + idx_min * (bar_w + gap) + bar_w / 2;
+      int min_top_y = val_to_y(price_min);
+      it.filled_circle(min_bar_x, chart_y - 24, 5, black);
+      if (min_top_y - 2 > chart_y - 18) {
+        it.line(min_bar_x, chart_y - 18, min_bar_x, min_top_y - 2, black);
+      }
+
+      it.line(0, baseline_y + 26, 960, baseline_y + 26, black);
+
+      // ---- 8. Footer: laagste / gemiddeld / hoogste + tijdstip -----------------
+      int min_hour = (int) roundf(idx_min * 24.0f / count);
+      int max_hour = (int) roundf(idx_max * 24.0f / count);
+
+      char min_s[10], max_s[10], avg_s[10];
+      snprintf(min_s, sizeof(min_s), "%.1f", price_min * 100.0f);
+      snprintf(max_s, sizeof(max_s), "%.1f", price_max * 100.0f);
+      snprintf(avg_s, sizeof(avg_s), "%.1f", avg * 100.0f);
+      for (char *p = min_s; *p; p++) if (*p == '.') *p = ',';
+      for (char *p = max_s; *p; p++) if (*p == '.') *p = ',';
+      for (char *p = avg_s; *p; p++) if (*p == '.') *p = ',';
+
+      it.printf(20, baseline_y + 38, id(font_footer_bold), black, TextAlign::TOP_LEFT,
+                "Laagste: %s ct (%02d:00)", min_s, min_hour);
+      it.printf(340, baseline_y + 38, id(font_footer), black, TextAlign::TOP_LEFT,
+                "Gemiddeld: %s ct", avg_s);
+      it.printf(600, baseline_y + 38, id(font_footer_bold), black, TextAlign::TOP_LEFT,
+                "Hoogste: %s ct (%02d:00)", max_s, max_hour);
+
+      // laatst bijgewerkt + batterij, klein onderaan (y=496, niet 505: anders
+      // valt de regel deels achter de behuizing)
+      char upd[32] = "";
+      if (id(ha_time).now().is_valid()) {
+        auto t = id(ha_time).now();
+        snprintf(upd, sizeof(upd), "scherm bijgewerkt %02d:%02d", t.hour, t.minute);
+      }
+      it.print(20, 496, id(font_small), black, TextAlign::TOP_LEFT, upd);
+
+      if (id(batt).has_state()) {
+        char bb[24];
+        snprintf(bb, sizeof(bb), "batterij %.0f%%", id(batt).state);
+        it.print(940, 496, id(font_small), black, TextAlign::TOP_RIGHT, bb);
+      }
