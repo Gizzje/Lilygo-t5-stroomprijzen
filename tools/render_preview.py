@@ -145,6 +145,7 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
 
     # was y=505 -> viel tegen de onderrand aan; nu 496
     draw_text(d, (20, 496), f"scherm bijgewerkt {updated_str}", f_small)
+    draw_text(d, (480, 496), "knop bovenop: wissel vandaag/morgen", f_small, anchor="ma")
     draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
 
     img.save(filename)
@@ -159,5 +160,22 @@ tomorrow = [0.18, 0.16, 0.14, 0.13, 0.14, 0.17, 0.22, 0.26, 0.24, 0.19,
             0.13, 0.08, 0.04, 0.02, 0.03, 0.07, 0.12, 0.19, 0.25, 0.28,
             0.26, 0.23, 0.20, 0.19]
 
+def render_unknown(filename, updated_str="09:20"):
+    """Wat je ziet als je naar morgen wisselt terwijl de day-ahead prijzen nog
+    niet gepubliceerd zijn."""
+    img = Image.new("RGB", (W, H), WHITE)
+    d = ImageDraw.Draw(img)
+    draw_text(d, (20, 14), "Stroomprijzen morgen", f_title)
+    d.line([(0, 114), (960, 114)], fill=BLACK, width=1)
+    draw_text(d, (480, 250), "Prijzen van morgen nog niet bekend", f_title, anchor="ma")
+    draw_text(d, (480, 300), "Druk op de bovenste knop om te wisselen", f_footer, anchor="ma")
+    draw_text(d, (20, 496), f"scherm bijgewerkt {updated_str}", f_small)
+    draw_text(d, (480, 496), "knop bovenop: wissel vandaag/morgen", f_small, anchor="ma")
+    draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
+    img.save(filename)
+    print("saved", filename)
+
+
 render(today, True, 19, "28-08-2026", "../docs/preview-vandaag.png", updated_str="19:59")
 render(tomorrow, False, 0, "29-08-2026", "../docs/preview-morgen.png", updated_str="22:02")
+render_unknown("../docs/preview-morgen-onbekend.png")

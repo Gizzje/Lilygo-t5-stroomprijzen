@@ -288,7 +288,47 @@ OTA-client doet 3 pogingen met 5 seconden ertussen.
 
 ---
 
-## 7. Home Assistant: de dubbele `template:`-sleutel
+## 7. Meerdere wake-knoppen: ext1 `ALL_LOW` doet niet wat je denkt
+
+Toen de vandaag/morgen-toggle erbij kwam, lag het voor de hand om de vrije
+knop op GPIO35 als tweede wake-pin toe te voegen. Dat werkt niet.
+
+De originele ESP32 kent voor ext1 maar twee modi: `ALL_LOW` en `ANY_HIGH`. De
+knoppen op dit bord zijn active-low, dus `ANY_HIGH` valt af. En `ALL_LOW`
+betekent letterlijk: wek als **alle** opgegeven pinnen tegelijk laag zijn. Met
+GPIO39 en GPIO35 samen in één ext1-config zou je dus beide knoppen tegelijk
+moeten indrukken om het apparaat te wekken.
+
+(ESPHome bevestigt dit ook in `components/deep_sleep/__init__.py`: `ALL_LOW`
+wordt daar expliciet beperkt tot `VARIANT_ESP32`.)
+
+Daarom is de toggle op **knop 1 (GPIO39)** gezet - de bestaande wake-pin. Eén
+druk = wakker worden, van dag wisselen en tekenen.
+
+De wake-oorzaak lees je uit `esp_sleep_get_wakeup_cause()`; die is in lambdas
+gewoon beschikbaar, want `deep_sleep_component.h` include't `<esp_sleep.h>`:
+
+```cpp
+if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1) {
+  id(show_tomorrow) = !id(show_tomorrow);   // knopdruk -> omschakelen
+} else {
+  auto t = id(ha_time).now();               // timer/reset -> standaardweergave
+  if (t.is_valid()) id(show_tomorrow) = (t.hour >= 22);
+}
+```
+
+Twee details die makkelijk misgaan:
+
+* Doe dit **niet** in `on_boot` met een hoge prioriteit: `ha_time` is dan nog
+  niet gesynchroniseerd en globals met `restore_value` zijn misschien nog niet
+  hersteld. Het gebeurt hier in het script dat draait zodra de sensordata
+  binnen is.
+* Zet er een `view_decided`-vlag omheen. Het script kan per boot meerdere keren
+  afgaan, en dan zou je twee keer omschakelen.
+
+---
+
+## 8. Home Assistant: de dubbele `template:`-sleutel
 
 Niet ESPHome-gerelateerd, maar wel een uur zoekwerk waard. Had je al een
 `template:`-blok in `configuration.yaml` en voeg je er een tweede toe (voor de

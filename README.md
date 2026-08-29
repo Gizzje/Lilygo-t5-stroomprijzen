@@ -14,6 +14,11 @@ staan:
 
 ![Dashboard - morgen](docs/preview-morgen.png)
 
+Zijn de prijzen van morgen nog niet gepubliceerd, dan zegt het scherm dat
+gewoon in plaats van verouderde cijfers te tonen:
+
+![Morgen nog niet bekend](docs/preview-morgen-onbekend.png)
+
 ## Waarom deze repo bestaat
 
 De bestaande community-component voor dit scherm (`vbaksa/esphome`) compileert
@@ -33,13 +38,17 @@ Getest op ESPHome 2026.8.1 / ESP-IDF 5.5.5, ESP32-WROVER-E rev 3.0,
 
 ```
 Nord Pool (HA-integratie)
-        │  nordpool.get_prices_for_date
+        │  nordpool.get_prices_for_date   (2x: vandaag en morgen)
         ▼
-sensor.stroomprijzen_vandaag_csv        ← trigger-based template sensor
-        │  "0.162,0.167,0.148,..."  +  attributen toont/datum
+sensor.stroomprijzen_vandaag_csv   sensor.stroomprijzen_morgen_csv
+        │        "0.162,0.167,0.148,..."  + attribuut datum
         ▼  (ESPHome native API)
-LilyGo T5 4.7"                          ← parst de CSV en tekent zelf
+LilyGo T5 4.7"   ← heeft beide datasets, knop 1 wisselt ertussen
 ```
+
+**Twee sensoren, elk met een vaste betekenis.** Dat is nodig omdat het scherm
+beide datasets tegelijk moet hebben om te kunnen wisselen. (Eerder was het één
+sensor die om 22:00 omklapte van vandaag naar morgen.)
 
 De core Nord Pool-integratie publiceert geen kant-en-klare 24-uurs-array; die
 is alleen op te vragen via de actie `nordpool.get_prices_for_date`. Een
@@ -61,16 +70,33 @@ Twee details die makkelijk misgaan:
 
 Bewust niet elk uur - dat kost accu zonder iets toe te voegen.
 
-| Wanneer | Wat |
-|---|---|
-| HA-opstart | sensor vult zich meteen |
-| 00:05 | prijzen van de nieuwe dag |
-| 22:00 | schakelt over naar de prijzen van **morgen** |
+| Wanneer | Sensor vandaag | Sensor morgen |
+|---|---|---|
+| HA-opstart | ✓ | ✓ |
+| 00:05 | ✓ | ✓ |
+| 14:00 | | ✓ (day-ahead is meestal rond 13:00 bekend) |
+| 22:00 | | ✓ |
 
-Het apparaat wordt om **00:07** en **22:02** wakker, net ná de sensor, zodat
-de data gegarandeerd al binnen is. Day-ahead prijzen zijn meestal al rond
-13:00 de dag ervoor bekend, dus je ziet 's avonds of je de vaatwasser 's
-nachts moet laten draaien of beter tot morgenmiddag kunt wachten.
+Het apparaat wordt om **00:07** en **22:02** wakker, net ná de sensor, zodat de
+data gegarandeerd al binnen is. Bij die geplande wakes kiest het scherm zelf de
+logische weergave: 's nachts vandaag, vanaf 22:00 morgen. Zo zie je 's avonds
+of je de vaatwasser 's nachts moet laten draaien of beter tot morgenmiddag
+kunt wachten.
+
+## Bediening
+
+De bovenste zijknop (GPIO39) doet alles:
+
+1. **Slaapt het apparaat?** Indrukken wekt hem, hij wisselt van dag en tekent.
+2. **Nog eens indrukken** → terug naar de andere dag.
+
+Zijn de prijzen van morgen nog niet gepubliceerd, dan toont het scherm
+"Prijzen van morgen nog niet bekend" in plaats van verouderde cijfers. De
+firmware vergelijkt daarvoor het `datum`-attribuut van de sensor met zijn eigen
+berekende datum van morgen; komen die niet overeen, dan is de sensor blijven
+hangen op een mislukte fetch.
+
+De middelste knop (GPIO34) houdt het apparaat wakker voor onderhoud/OTA.
 
 ## Installatie
 
@@ -112,10 +138,15 @@ epdiy-boarddefinitie.
 
 | GPIO | Functie |
 |---|---|
-| 39 | Wake uit deep sleep + scherm hertekenen (bovenste zijknop) |
+| 39 | Wake uit deep sleep + **wisselen tussen vandaag en morgen** (bovenste zijknop) |
 | 34 | Stay-awake: houdt het apparaat wakker voor onderhoud/OTA |
 | 35 | Vrij |
 | 36 | Accuspanning (ADC, deler x2) |
+
+Knop 1 moest de wisselknop worden omdat hij als enige het apparaat kan wekken:
+de ESP32 ext1-wakeup staat op `ALL_LOW`, en dat betekent letterlijk "wek als
+*alle* opgegeven pinnen laag zijn". Een tweede pin toevoegen zou betekenen dat
+je twee knoppen tegelijk moet indrukken.
 
 ## Layout aanpassen zonder te flashen
 
@@ -152,6 +183,8 @@ Kort samengevat; de volledige uitleg staat in
   probleem maar het gewicht; alle fonts staan daarom op `@700`.
 * **`deep_sleep.enter` negeert `deep_sleep.prevent`.** Wil je het apparaat
   wakker houden, gebruik dan een global + `wait_until`, zoals hier gedaan.
+* **ext1-wakeup met `ALL_LOW` en meerdere pinnen** wekt pas als *alle* pinnen
+  tegelijk laag zijn - niet bij de eerste de beste knop.
 
 ## Herkomst en licentie
 

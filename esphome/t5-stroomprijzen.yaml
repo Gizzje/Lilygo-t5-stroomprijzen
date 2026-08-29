@@ -168,12 +168,15 @@ text_sensor:
         - delay: 3s
         - script.execute: all_data_received
   - platform: homeassistant
-    id: prices_shows
-    entity_id: sensor.stroomprijzen_vandaag_csv
-    attribute: toont
-  - platform: homeassistant
     id: prices_date
     entity_id: sensor.stroomprijzen_vandaag_csv
+    attribute: datum
+  - platform: homeassistant
+    id: prices_morgen_csv
+    entity_id: sensor.stroomprijzen_morgen_csv
+  - platform: homeassistant
+    id: prices_morgen_date
+    entity_id: sensor.stroomprijzen_morgen_csv
     attribute: datum
 
 globals:
@@ -185,9 +188,42 @@ globals:
     restore_value: no
     initial_value: 'false'
 
+  # false = vandaag, true = morgen. Blijft bewaard over deep sleep heen, want
+  # knop 1 schakelt hem om t.o.v. de vorige stand.
+  - id: show_tomorrow
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
+  # Zorgt dat de weergave per boot maar een keer bepaald wordt; het
+  # all_data_received-script kan meerdere keren afgaan.
+  - id: view_decided
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
 script:
   - id: all_data_received
     then:
+      # Bepaal welke dag we tonen. Gewekt door de knop (EXT1) -> omschakelen.
+      # Geplande wake of reset -> standaardweergave op basis van het tijdstip,
+      # net als voorheen: vanaf 22:00 is morgen het interessante beeld.
+      - lambda: |-
+          if (!id(view_decided)) {
+            id(view_decided) = true;
+            if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1) {
+              id(show_tomorrow) = !id(show_tomorrow);
+              ESP_LOGI("stroomprijzen", "Knopdruk -> toon %s",
+                       id(show_tomorrow) ? "morgen" : "vandaag");
+            } else {
+              auto t = id(ha_time).now();
+              if (t.is_valid()) {
+                id(show_tomorrow) = (t.hour >= 22);
+              }
+              ESP_LOGI("stroomprijzen", "Geplande wake -> toon %s",
+                       id(show_tomorrow) ? "morgen" : "vandaag");
+            }
+          }
       - component.update: batt_volt
       - component.update: batt
       - component.update: t5_display
@@ -252,7 +288,11 @@ display:
       const auto black = Color(0, 0, 0);
 
       // ---- 1. CSV met dagprijzen (EUR/kWh) inlezen en parsen ----------------
-      std::string csv = id(prices_csv).state;
+      // Knop 1 schakelt tussen vandaag en morgen; show_tomorrow is al gezet
+      // in het all_data_received-script.
+      bool is_today = !id(show_tomorrow);
+      std::string csv     = is_today ? id(prices_csv).state  : id(prices_morgen_csv).state;
+      std::string datebuf = is_today ? id(prices_date).state : id(prices_morgen_date).state;
       std::vector<float> prices;
       if (!csv.empty() && csv != "unknown" && csv != "unavailable") {
         size_t pos = 0;
@@ -269,17 +309,31 @@ display:
 
       // ---- 2. Titel/header (altijd tonen, ook zonder data) -------------------
       // "toont"-attribuut uit HA bepaalt of dit vandaag of morgen is.
-      bool is_today = (id(prices_shows).state != "morgen");
       it.print(20, 14, id(font_title), black, TextAlign::TOP_LEFT,
                is_today ? "Stroomprijzen vandaag" : "Stroomprijzen morgen");
 
-      std::string datebuf = id(prices_date).state;
-      it.print(20, 52, id(font_footer), black, TextAlign::TOP_LEFT, datebuf.c_str());
+      // Zijn de prijzen van morgen wel echt van morgen? Mislukt de HA-fetch
+      // (day-ahead nog niet gepubliceerd), dan blijft de sensor op zijn oude
+      // waarde staan en klopt het datum-attribuut niet meer.
+      bool date_ok = true;
+      if (!is_today && id(ha_time).now().is_valid()) {
+        ESPTime tm = ESPTime::from_epoch_local(id(ha_time).now().timestamp + 86400);
+        char expect[16];
+        snprintf(expect, sizeof(expect), "%02d-%02d-%04d", tm.day_of_month, tm.month, tm.year);
+        date_ok = (datebuf == expect);
+      }
+
+      if (date_ok) {
+        it.print(20, 52, id(font_footer), black, TextAlign::TOP_LEFT, datebuf.c_str());
+      }
       it.line(0, 114, 960, 114, black);
 
-      if (prices.empty()) {
-        it.print(480, 270, id(font_title), black, TextAlign::CENTER,
-                 "Wachten op prijsdata uit Home Assistant...");
+      if (prices.empty() || !date_ok) {
+        it.print(480, 250, id(font_title), black, TextAlign::CENTER,
+                 is_today ? "Wachten op prijsdata uit Home Assistant..."
+                          : "Prijzen van morgen nog niet bekend");
+        it.print(480, 300, id(font_footer), black, TextAlign::CENTER,
+                 "Druk op de bovenste knop om te wisselen");
         return;
       }
 
@@ -369,7 +423,7 @@ display:
         int h = baseline_y - top_y;
         if (h < 1) h = 1;
 
-        if (i == current_idx) {
+        if (is_today && i == current_idx) {
           // huidig uur: volledig zwart gevuld + dikkere rand
           it.filled_rectangle(bar_x, top_y, bar_w, h, black);
           it.rectangle(bar_x - 1, top_y - 1, bar_w + 2, h + 1, black);
@@ -447,6 +501,8 @@ display:
         snprintf(upd, sizeof(upd), "scherm bijgewerkt %02d:%02d", t.hour, t.minute);
       }
       it.print(20, 496, id(font_small), black, TextAlign::TOP_LEFT, upd);
+      it.print(480, 496, id(font_small), black, TextAlign::TOP_CENTER,
+               "knop bovenop: wissel vandaag/morgen");
 
       if (id(batt).has_state()) {
         char bb[24];
