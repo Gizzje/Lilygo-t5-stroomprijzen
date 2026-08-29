@@ -85,10 +85,22 @@ kunt wachten.
 
 ## Bediening
 
-De bovenste zijknop (GPIO39) doet alles:
+**Elke knopdruk wisselt tussen vandaag en morgen** - zowel de wake-knop
+(IO39) als de resetknop (RST). Indrukken wekt het apparaat, het wisselt van
+dag en tekent opnieuw. Nog eens indrukken brengt je terug.
 
-1. **Slaapt het apparaat?** Indrukken wekt hem, hij wisselt van dag en tekent.
-2. **Nog eens indrukken** → terug naar de andere dag.
+Dat het ook op RST werkt is bewust: op de T5 4.7" staan de knoppen in de
+volgorde **IO39 - IO34 - IO35 - IO0 - RST**, en RST is voor de meeste mensen
+de knop die het makkelijkst te vinden is. Deep sleep verlaten via een reset
+kost net zoveel als via de wake-pin, dus er is geen reden om je naar een
+specifieke knop te dwingen.
+
+Alleen een **geplande wake** (00:07 / 22:02) kiest zelf: 's nachts vandaag,
+'s avonds morgen. De firmware onderscheidt dat aan de wake-oorzaak - is die
+`ESP_SLEEP_WAKEUP_TIMER`, dan is het de klok; al het andere is een mens.
+
+> Ook een herstart na een OTA-update telt als knopdruk, dus vlak na het
+> flashen kan het scherm op "morgen" springen. Eén druk zet het terug.
 
 Zijn de prijzen van morgen nog niet gepubliceerd, dan toont het scherm
 "Prijzen van morgen nog niet bekend" in plaats van verouderde cijfers. De

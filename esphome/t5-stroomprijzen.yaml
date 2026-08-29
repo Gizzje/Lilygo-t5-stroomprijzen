@@ -205,24 +205,27 @@ globals:
 script:
   - id: all_data_received
     then:
-      # Bepaal welke dag we tonen. Gewekt door de knop (EXT1) -> omschakelen.
-      # Geplande wake of reset -> standaardweergave op basis van het tijdstip,
-      # net als voorheen: vanaf 22:00 is morgen het interessante beeld.
+      # Elke knopdruk (wake-knop of reset) schakelt tussen vandaag en morgen.
+      # Alleen een geplande timer-wake kiest de standaardweergave voor dat uur:
+      # vanaf 22:00 is morgen het interessante beeld.
       - lambda: |-
           if (!id(view_decided)) {
             id(view_decided) = true;
-            if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1) {
-              id(show_tomorrow) = !id(show_tomorrow);
-              ESP_LOGI("stroomprijzen", "Knopdruk -> toon %s",
-                       id(show_tomorrow) ? "morgen" : "vandaag");
-            } else {
+            esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+            // TIMER = geplande wake (00:07 / 22:02) -> standaardweergave voor
+            // dat tijdstip. Al het andere is een menselijke actie: de knop op
+            // GPIO39 geeft EXT1, de resetknop geeft UNDEFINED. Allebei
+            // omschakelen, zodat het niet uitmaakt welke knop je pakt.
+            if (cause == ESP_SLEEP_WAKEUP_TIMER) {
               auto t = id(ha_time).now();
               if (t.is_valid()) {
                 id(show_tomorrow) = (t.hour >= 22);
               }
-              ESP_LOGI("stroomprijzen", "Geplande wake -> toon %s",
-                       id(show_tomorrow) ? "morgen" : "vandaag");
+            } else {
+              id(show_tomorrow) = !id(show_tomorrow);
             }
+            ESP_LOGI("stroomprijzen", "Wake cause %d -> toon %s", (int) cause,
+                     id(show_tomorrow) ? "morgen" : "vandaag");
           }
       - component.update: batt_volt
       - component.update: batt

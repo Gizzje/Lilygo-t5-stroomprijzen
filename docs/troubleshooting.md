@@ -302,20 +302,29 @@ moeten indrukken om het apparaat te wekken.
 (ESPHome bevestigt dit ook in `components/deep_sleep/__init__.py`: `ALL_LOW`
 wordt daar expliciet beperkt tot `VARIANT_ESP32`.)
 
-Daarom is de toggle op **knop 1 (GPIO39)** gezet - de bestaande wake-pin. Eén
-druk = wakker worden, van dag wisselen en tekenen.
+### Kijk niet naar EXT1, maar naar "niet-TIMER"
 
-De wake-oorzaak lees je uit `esp_sleep_get_wakeup_cause()`; die is in lambdas
-gewoon beschikbaar, want `deep_sleep_component.h` include't `<esp_sleep.h>`:
+De eerste versie zette de toggle op de wake-pin en testte op
+`ESP_SLEEP_WAKEUP_EXT1`. In de praktijk bleek dat de verkeerde aanname: de
+knoppen staan in de volgorde **IO39 - IO34 - IO35 - IO0 - RST**, en de knop die
+je intuïtief pakt is RST. Een reset is geen EXT1-wake, dus er gebeurde niets.
+
+Beter is het om het om te draaien. Alleen een timer-wake is "de klok"; al het
+andere - de wake-pin (EXT1), de resetknop (UNDEFINED), een herstart na OTA -
+is een menselijke actie:
 
 ```cpp
-if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1) {
-  id(show_tomorrow) = !id(show_tomorrow);   // knopdruk -> omschakelen
-} else {
-  auto t = id(ha_time).now();               // timer/reset -> standaardweergave
+esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+  auto t = id(ha_time).now();               // de klok -> standaardweergave
   if (t.is_valid()) id(show_tomorrow) = (t.hour >= 22);
+} else {
+  id(show_tomorrow) = !id(show_tomorrow);   // een mens -> omschakelen
 }
 ```
+
+Zo maakt het niet uit welke knop iemand pakt. De wake-oorzaak is in lambdas
+gewoon beschikbaar, want `deep_sleep_component.h` include't `<esp_sleep.h>`.
 
 Twee details die makkelijk misgaan:
 
