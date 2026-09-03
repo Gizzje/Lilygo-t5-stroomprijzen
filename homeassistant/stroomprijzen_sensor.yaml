@@ -1,118 +1,87 @@
 # ============================================================================
 # Home Assistant: stroomprijzen van vandaag EN morgen als CSV-string
 # ============================================================================
-# LET OP: dit bestand wordt aangeroepen als "template: !include stroomprijzen_sensor.yaml"
-# vanuit configuration.yaml. Daarom staat hier GEEN "template:"-regel meer
-# bovenaan - die context komt al mee via de include-regel in configuration.yaml.
-# Dit bestand is dus direct de lijst die normaal onder "template:" zou staan.
+# LET OP: dit bestand wordt aangeroepen als
+# "template: !include stroomprijzen_sensor.yaml" vanuit configuration.yaml.
+# Daarom staat hier GEEN "template:"-regel bovenaan.
 #
-# >>> VALKUIL: heb je al een "template:"-blok in configuration.yaml, dan
-# >>> overschrijft YAML de ene sleutel stilzwijgend met de andere. Geen
-# >>> foutmelding, "Controleer configuratie" blijft groen, maar de sensor
-# >>> wordt nooit aangemaakt. Zet alles onder EEN template:-sleutel.
+# BRON: Zonneplan (integratie fsaris/home-assistant-zonneplan-one).
+# We gebruiken price_tax_included: de ALL-IN consumentenprijs, inclusief
+# inkoopvergoeding, energiebelasting en btw - precies wat Zonneplan factureert.
+# Bewust NIET zelf omrekenen vanaf een spotprijs: de opslag is een
+# contractvoorwaarde en de energiebelasting wijzigt elk jaar per 1 januari.
+# Een handgemaakte formule gaat daardoor stilzwijgend driften.
 #
-# Doel: de ESPHome T5 4.7" haalt de volledige dagprijs-array niet rechtstreeks
-# uit de "Nord Pool"-integratie, want de moderne (core) Nord Pool-integratie
-# publiceert alleen huidige/vorige/volgende/hoogste/laagste prijs als losse
-# sensoren. De volledige lijst van uurprijzen is alleen op te vragen via de
-# service/actie "nordpool.get_prices_for_date".
+# Het forecast-attribuut bevat kwartierprijzen (96 per dag) over een venster
+# van ruwweg een dag terug tot twee dagen vooruit, dus vandaag EN morgen
+# zitten er altijd in. amount staat in 1e-7 EUR: 2536993 -> 0,2536993
+# EUR/kWh. Vandaar de deling door 10000000.
+#
+# Per LOKAAL uur middelen: 96 losse kwartierwaarden passen niet binnen de
+# HA state-limiet van 255 tekens (de state werd dan stilzwijgend "unknown").
 #
 # TWEE SENSOREN, elk met een vaste betekenis:
-#   sensor.stroomprijzen_vandaag_csv  -> ALTIJD vandaag
-#   sensor.stroomprijzen_morgen_csv   -> ALTIJD morgen
-# Het scherm heeft ze allebei tegelijk nodig, want met de bovenste zijknop kun
-# je erdoorheen schakelen. Eerder was het een enkele sensor die om 22:00
-# omklapte van vandaag naar morgen; dat kan niet meer.
-#
-# De sensor-state is een CSV-string (EUR/kWh, 3 decimalen, bv.
-# "0.199,0.194,0.183,..."), kort genoeg (~190 tekens voor 24 waarden) om
-# binnen de HA state-limiet van 255 tekens te passen.
+#   sensor.stroomprijzen_vandaag_csv -> ALTIJD vandaag
+#   sensor.stroomprijzen_morgen_csv  -> ALTIJD morgen
+# Het scherm heeft ze allebei tegelijk nodig; de bovenste zijknop schakelt.
 #
 # Het attribuut "datum" (dd-mm-jjjj) is belangrijk: de firmware vergelijkt dat
-# met zijn eigen berekende datum van morgen. Zijn ze ongelijk, dan is de
-# morgen-sensor verouderd (de fetch is mislukt omdat de day-ahead prijzen nog
-# niet gepubliceerd waren) en toont het scherm "Prijzen van morgen nog niet
-# bekend" in plaats van stilletjes verkeerde cijfers.
+# met zijn eigen berekende datum van morgen. Zijn ze ongelijk, dan toont het
+# scherm "Prijzen van morgen nog niet bekend" in plaats van oude cijfers.
 #
-# INSTALLATIE
-# 1. Zet dit bestand in je config-map (zelfde map als configuration.yaml),
-#    onder de naam stroomprijzen_sensor.yaml.
-# 2. Zorg dat configuration.yaml deze regel bevat:
-#      template: !include stroomprijzen_sensor.yaml
-# 3. Vul hieronder tweemaal je eigen config_entry in.
-# 4. Developer Tools > YAML > "Controleer configuratie" - moet groen zijn.
-# 5. Developer Tools > YAML > "Template entities" herladen (of herstart HA
-#    eenmalig om ook meteen de "homeassistant start"-trigger af te vuren).
-#
-# Pas "areas" en "currency" aan als je geen NL/EUR gebruikt.
+# DST-kanttekening: we lopen range(24) af. Op de 25-uursdag worden de twee
+# uren "2" samengevoegd, op de 23-uursdag ontbreekt uur 2. Cosmetisch.
 # ============================================================================
 
-# ----------------------------------------------------------------------------
-# 1. VANDAAG - ververst bij HA-opstart en elke nacht om 00:05
-# ----------------------------------------------------------------------------
 - trigger:
     - trigger: homeassistant
       event: start
     - trigger: time_pattern
       hours: "0"
       minutes: "5"
-  action:
-    - action: nordpool.get_prices_for_date
-      data:
-        # >>> VUL JE EIGEN CONFIG ENTRY ID IN <<<
-        # Te vinden via Instellingen > Apparaten & diensten > Nord Pool >
-        # klik de integratie aan; het ID staat in de URL na /config_entry/.
-        config_entry: YOUR_NORDPOOL_CONFIG_ENTRY_ID
-        date: "{{ now().date() }}"
-        areas: ["NL"]
-        currency: "EUR"
-      response_variable: np_data
+    - trigger: time_pattern
+      minutes: "/30"
+    # Handmatig verversen: vuur het event stroomprijzen_refresh af
+    # (Ontwikkelhulpmiddelen > Gebeurtenissen). Handig na een reload.
+    - trigger: event
+      event_type: stroomprijzen_refresh
   sensor:
     - name: "Stroomprijzen vandaag CSV"
       unique_id: stroomprijzen_vandaag_csv
       icon: mdi:transmission-tower
-      # Nord Pool NL levert tegenwoordig kwartierprijzen (96 per dag) in
-      # plaats van uurprijzen. Die passen als losse waarden niet meer
-      # binnen de HA state-limiet van 255 tekens, dus we middelen ze hier
-      # per (lokaal!) uur tot weer 24 (of 23/25 op DST-dagen) waarden.
       state: >
-        {% set ns = namespace(prices=[], cur_hour=none, cur_sum=0.0, cur_cnt=0) %}
-        {% for p in (np_data.NL | sort(attribute='start')) %}
-          {% set h = (p.start | as_datetime | as_local).hour %}
-          {% if ns.cur_hour is none %}
-            {% set ns.cur_hour = h %}
+        {% set fc = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff','forecast') or [] %}
+        {% set target = (now() + timedelta(days=0)).date() %}
+        {% set day = namespace(items=[]) %}
+        {% for f in fc %}
+          {% set d = f.start_date | as_datetime | as_local %}
+          {% if d.date() == target %}
+            {% set day.items = day.items + [ {'h': d.hour, 'v': f.price_tax_included.amount} ] %}
           {% endif %}
-          {% if h != ns.cur_hour %}
-            {% set ns.prices = ns.prices + [ (ns.cur_sum / ns.cur_cnt / 1000) | round(3) ] %}
-            {% set ns.cur_hour = h %}
-            {% set ns.cur_sum = 0.0 %}
-            {% set ns.cur_cnt = 0 %}
-          {% endif %}
-          {% set ns.cur_sum = ns.cur_sum + p.price %}
-          {% set ns.cur_cnt = ns.cur_cnt + 1 %}
         {% endfor %}
-        {% if ns.cur_cnt > 0 %}
-          {% set ns.prices = ns.prices + [ (ns.cur_sum / ns.cur_cnt / 1000) | round(3) ] %}
-        {% endif %}
-        {{ ns.prices | join(',') }}
+        {% set out = namespace(l=[]) %}
+        {% for h in range(24) %}
+          {% set vals = day.items | selectattr('h','eq',h) | map(attribute='v') | list %}
+          {% if vals | count > 0 %}
+            {% set out.l = out.l + [ ((vals|sum)/(vals|count)/10000000) | round(3) ] %}
+          {% endif %}
+        {% endfor %}
+        {{ out.l | join(',') }}
       attributes:
-        datum: "{{ now().strftime('%d-%m-%Y') }}"
+        datum: "{{ (now() + timedelta(days=0)).strftime('%d-%m-%Y') }}"
         aantal_uren: >
-          {% set ns2 = namespace(hours=[]) %}
-          {% for p in np_data.NL %}
-            {% set h = (p.start | as_datetime | as_local).hour %}
-            {% if h not in ns2.hours %}
-              {% set ns2.hours = ns2.hours + [h] %}
+          {% set fc = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff','forecast') or [] %}
+          {% set target = (now() + timedelta(days=0)).date() %}
+          {% set ns = namespace(h=[]) %}
+          {% for f in fc %}
+            {% set d = f.start_date | as_datetime | as_local %}
+            {% if d.date() == target and d.hour not in ns.h %}
+              {% set ns.h = ns.h + [d.hour] %}
             {% endif %}
           {% endfor %}
-          {{ ns2.hours | length }}
+          {{ ns.h | count }}
         laatst_opgehaald: "{{ now().isoformat() }}"
 
-# ----------------------------------------------------------------------------
-# 2. MORGEN - apart blok, zodat een mislukte fetch (prijzen nog niet
-#    gepubliceerd) de vandaag-sensor NIET meesleept.
-#    14:00 omdat de day-ahead prijzen meestal rond 13:00 binnen zijn.
-# ----------------------------------------------------------------------------
 - trigger:
     - trigger: homeassistant
       event: start
@@ -120,66 +89,44 @@
       hours: "0"
       minutes: "5"
     - trigger: time_pattern
-      hours: "14"
-      minutes: "0"
-    - trigger: time_pattern
-      hours: "22"
-      minutes: "0"
-  action:
-    - action: nordpool.get_prices_for_date
-      data:
-        # >>> VUL JE EIGEN CONFIG ENTRY ID IN <<<
-        config_entry: YOUR_NORDPOOL_CONFIG_ENTRY_ID
-        date: "{{ now().date() + timedelta(days=1) }}"
-        areas: ["NL"]
-        currency: "EUR"
-      response_variable: np_data
+      minutes: "/30"
+    # Handmatig verversen: vuur het event stroomprijzen_refresh af
+    # (Ontwikkelhulpmiddelen > Gebeurtenissen). Handig na een reload.
+    - trigger: event
+      event_type: stroomprijzen_refresh
   sensor:
     - name: "Stroomprijzen morgen CSV"
       unique_id: stroomprijzen_morgen_csv
       icon: mdi:transmission-tower
       state: >
-        {% set ns = namespace(prices=[], cur_hour=none, cur_sum=0.0, cur_cnt=0) %}
-        {% for p in (np_data.NL | sort(attribute='start')) %}
-          {% set h = (p.start | as_datetime | as_local).hour %}
-          {% if ns.cur_hour is none %}
-            {% set ns.cur_hour = h %}
+        {% set fc = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff','forecast') or [] %}
+        {% set target = (now() + timedelta(days=1)).date() %}
+        {% set day = namespace(items=[]) %}
+        {% for f in fc %}
+          {% set d = f.start_date | as_datetime | as_local %}
+          {% if d.date() == target %}
+            {% set day.items = day.items + [ {'h': d.hour, 'v': f.price_tax_included.amount} ] %}
           {% endif %}
-          {% if h != ns.cur_hour %}
-            {% set ns.prices = ns.prices + [ (ns.cur_sum / ns.cur_cnt / 1000) | round(3) ] %}
-            {% set ns.cur_hour = h %}
-            {% set ns.cur_sum = 0.0 %}
-            {% set ns.cur_cnt = 0 %}
-          {% endif %}
-          {% set ns.cur_sum = ns.cur_sum + p.price %}
-          {% set ns.cur_cnt = ns.cur_cnt + 1 %}
         {% endfor %}
-        {% if ns.cur_cnt > 0 %}
-          {% set ns.prices = ns.prices + [ (ns.cur_sum / ns.cur_cnt / 1000) | round(3) ] %}
-        {% endif %}
-        {{ ns.prices | join(',') }}
+        {% set out = namespace(l=[]) %}
+        {% for h in range(24) %}
+          {% set vals = day.items | selectattr('h','eq',h) | map(attribute='v') | list %}
+          {% if vals | count > 0 %}
+            {% set out.l = out.l + [ ((vals|sum)/(vals|count)/10000000) | round(3) ] %}
+          {% endif %}
+        {% endfor %}
+        {{ out.l | join(',') }}
       attributes:
         datum: "{{ (now() + timedelta(days=1)).strftime('%d-%m-%Y') }}"
         aantal_uren: >
-          {% set ns2 = namespace(hours=[]) %}
-          {% for p in np_data.NL %}
-            {% set h = (p.start | as_datetime | as_local).hour %}
-            {% if h not in ns2.hours %}
-              {% set ns2.hours = ns2.hours + [h] %}
+          {% set fc = state_attr('sensor.zonneplan_current_quarter_hourly_electricity_tariff','forecast') or [] %}
+          {% set target = (now() + timedelta(days=1)).date() %}
+          {% set ns = namespace(h=[]) %}
+          {% for f in fc %}
+            {% set d = f.start_date | as_datetime | as_local %}
+            {% if d.date() == target and d.hour not in ns.h %}
+              {% set ns.h = ns.h + [d.hour] %}
             {% endif %}
           {% endfor %}
-          {{ ns2.hours | length }}
+          {{ ns.h | count }}
         laatst_opgehaald: "{{ now().isoformat() }}"
-
-# ----------------------------------------------------------------------------
-# Let op DST-dagen (laatste zondag van maart/oktober): dan bevat de dag 23 of
-# 25 uur in plaats van 24. De sensor geeft dan gewoon 23 of 25 waarden door;
-# de ESPHome-firmware verdeelt de balken automatisch over het aantal waarden
-# dat binnenkomt, dus dat blijft werken - alleen klopt de uur-highlight op
-# die twee dagen per jaar niet exact met het klokuur.
-#
-# Zijn de prijzen van morgen nog niet gepubliceerd, dan faalt de actie in blok 2
-# en behoudt sensor.stroomprijzen_morgen_csv zijn vorige waarde. Het attribuut
-# "datum" blijft dan ook op de oude datum staan; daaraan ziet de firmware dat
-# de data verouderd is.
-# ----------------------------------------------------------------------------

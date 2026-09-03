@@ -344,3 +344,86 @@ Niet ESPHome-gerelateerd, maar wel een uur zoekwerk waard. Had je al een
 `!include`), dan overschrijft YAML de ene sleutel stilzwijgend met de andere.
 Geen foutmelding, "Controleer configuratie" blijft groen, maar je sensor
 verschijnt nooit. Zet alles onder **één** `template:`-sleutel.
+
+---
+
+## 9. Van Nord Pool naar Zonneplan: niet zelf omrekenen
+
+Toen de leverancier Zonneplan werd, was de eerste ingeving om de Nord
+Pool-spotprijs op te hogen met een formule: `spot + inkoopvergoeding +
+energiebelasting + btw`. Doe dat niet. De opslag is een contractvoorwaarde die
+kan wijzigen, en de **energiebelasting verandert elk jaar per 1 januari**. Een
+handgemaakte formule gaat daardoor stilzwijgend driften: er gaat niets stuk, de
+getallen kloppen alleen op een dag net niet meer. Neem de prijs af van de partij
+die hem ook factureert.
+
+De architectuur hoefde daar niet voor op de schop. Het CSV-contract naar het
+scherm (`0.345,0.337,...` plus attribuut `datum`) bleef identiek; alleen de bron
+*binnen* de twee template-sensoren veranderde. **De tekenlogica in de firmware
+is geen letter gewijzigd** — op de toevoeging van de gasprijs na, en die stond
+los van deze migratie.
+
+Wat je moet weten over het `forecast`-attribuut van
+`sensor.zonneplan_current_quarter_hourly_electricity_tariff`:
+
+```json
+{"start_date": "2026-09-02T13:00:00+02:00",
+ "end_date":   "2026-09-02T13:15:00+02:00",
+ "price_tax_included": {"amount": 2536993},
+ "price_tax_excluded": {"amount": 1428512},
+ "sustainability_score": {"permille": 1000}}
+```
+
+* **`amount` staat in 1e-7 EUR.** `2536993` is `0,2536993` EUR/kWh. Delen door
+  `10000000`.
+* **`price_tax_included` is de all-in consumentenprijs.** Het verschil met
+  `price_tax_excluded` is over de hele forecast een *constante* (hier
+  `0,1108481`), en dat is precies de energiebelasting inclusief btw. Was de btw
+  pas in de laatste stap toegevoegd, dan zou dat verschil proportioneel zijn
+  geweest in plaats van constant. Handige controle als je twijfelt of je het
+  juiste veld te pakken hebt.
+* **Het venster is ruwweg een dag terug tot twee dagen vooruit** (~236
+  kwartieren). Vandaag én morgen zitten er dus altijd in; er is geen apart
+  ophaalmoment meer nodig zoals bij een day-ahead-fetch.
+* De prijzen worden zichtbaar ~2 tot 3x hoger dan kale spot. De grafiek schaalt
+  op min/max, dus daar hoefde niets aan.
+
+Groeperen per lokaal uur kan met een tussenstap die de filter-syntax van Jinja
+weer bruikbaar maakt:
+
+```jinja
+{% set day = namespace(items=[]) %}
+{% for f in fc %}
+  {% set d = f.start_date | as_datetime | as_local %}
+  {% if d.date() == target %}
+    {% set day.items = day.items + [ {'h': d.hour, 'v': f.price_tax_included.amount} ] %}
+  {% endif %}
+{% endfor %}
+...
+{% set vals = day.items | selectattr('h','eq',h) | map(attribute='v') | list %}
+```
+
+Bouw je die tussenlijst uit **tuples** in plaats van dicts, dan werkt
+`selectattr('0', ...)` niet: Jinja's `getattr` valt terug op item-lookup met de
+*string* `'0'`, en een tuple kent die sleutel niet. Met dicts werkt de fallback
+wel.
+
+### Een trigger-based template sensor na een reload
+
+Trigger-based sensors renderen niet uit zichzelf; na `template.reload` blijven
+ze op hun oude (of lege) waarde staan tot een trigger afgaat. Handig om er een
+event-trigger bij te zetten:
+
+```yaml
+    - trigger: event
+      event_type: stroomprijzen_refresh
+```
+
+Dan forceer je een verse render vanuit Ontwikkelhulpmiddelen > Gebeurtenissen,
+zonder op de volgende tijdtrigger te wachten.
+
+### Glyphs voor € en ³
+
+De gedeelde `glyphs`-anchor moest `€³` erbij voor "€/m³ gas". Vergeet je dat,
+dan faalt de build met `Codepoint 0x000020ac not found in font`. Dezelfde
+valkuil als eerder met de `/` voor "ct/kWh".

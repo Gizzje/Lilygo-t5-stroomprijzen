@@ -28,6 +28,7 @@ f_axis = font(20, bold=True)
 f_footer = font(21, bold=True)
 f_footer_bold = font(21, bold=True)
 f_small = font(16, bold=True)
+f_gas = font(40, bold=True)
 
 
 def q(g):
@@ -40,7 +41,7 @@ def draw_text(d, xy, txt, fnt, anchor="la", fill=BLACK):
     d.text(xy, txt, font=fnt, fill=fill, anchor=anchor)
 
 
-def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03"):
+def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03", gas=None):
     img = Image.new("RGB", (W, H), WHITE)
     d = ImageDraw.Draw(img)
 
@@ -64,6 +65,12 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
         draw_text(d, (940, 4), m, f_price_big, anchor="ra")
         hour = round(idx_min * 24 / count)
         draw_text(d, (940, 84), f"ct goedkoopst om {hour:02d}:00", f_price_unit, anchor="ra")
+
+    # Gasprijs links van de huidige stroomprijs. Alleen bij "vandaag": voor
+    # morgen publiceert Zonneplan nog geen gasdagprijs.
+    if is_today and gas is not None:
+        draw_text(d, (740, 36), f"{gas:.2f}".replace(".", ","), f_gas, anchor="ra")
+        draw_text(d, (740, 84), "\u20ac/m\u00b3 gas", f_price_unit, anchor="ra")
 
     # ---- Grafiek ----
     # chart_w van 860 -> 830 zodat het "gem"-label rechts niet meer afvalt
@@ -152,13 +159,16 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
     print("saved", filename)
 
 
-today = [0.162, 0.167, 0.148, 0.145, 0.145, 0.152, 0.176, 0.182, 0.173, 0.158,
-         0.139, 0.122, 0.114, 0.108, 0.098, 0.107, 0.111, 0.136, 0.159, 0.172,
-         0.177, 0.166, 0.162, 0.142]
+# Echte Zonneplan-prijzen (all-in incl. energiebelasting en btw), 03/04-09-2026
+today = [0.345, 0.337, 0.319, 0.306, 0.300, 0.306, 0.337, 0.359, 0.349, 0.312,
+         0.274, 0.236, 0.196, 0.171, 0.165, 0.169, 0.210, 0.280, 0.348, 0.391,
+         0.402, 0.369, 0.347, 0.333]
 
-tomorrow = [0.18, 0.16, 0.14, 0.13, 0.14, 0.17, 0.22, 0.26, 0.24, 0.19,
-            0.13, 0.08, 0.04, 0.02, 0.03, 0.07, 0.12, 0.19, 0.25, 0.28,
-            0.26, 0.23, 0.20, 0.19]
+tomorrow = [0.304, 0.281, 0.271, 0.271, 0.262, 0.263, 0.292, 0.315, 0.316, 0.298,
+            0.259, 0.207, 0.189, 0.171, 0.179, 0.180, 0.189, 0.216, 0.285, 0.305,
+            0.314, 0.318, 0.312, 0.301]
+
+GAS = 1.67   # EUR/m3, sensor.zonneplan_current_tariff_gas
 
 def render_unknown(filename, updated_str="09:20"):
     """Wat je ziet als je naar morgen wisselt terwijl de day-ahead prijzen nog
@@ -176,6 +186,6 @@ def render_unknown(filename, updated_str="09:20"):
     print("saved", filename)
 
 
-render(today, True, 19, "28-08-2026", "../docs/preview-vandaag.png", updated_str="19:59")
-render(tomorrow, False, 0, "29-08-2026", "../docs/preview-morgen.png", updated_str="22:02")
+render(today, True, 14, "03-09-2026", "../docs/preview-vandaag.png", updated_str="14:07", gas=GAS)
+render(tomorrow, False, 0, "04-09-2026", "../docs/preview-morgen.png", updated_str="22:02")
 render_unknown("../docs/preview-morgen-onbekend.png")

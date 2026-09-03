@@ -70,7 +70,7 @@ font:
   - file: "gfonts://Roboto@700"
     id: font_title
     size: 30
-    glyphs: &glyphs " %'(),-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    glyphs: &glyphs " %'(),-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz€³"
   - file: "gfonts://Roboto@700"
     id: font_price_big
     size: 62
@@ -94,6 +94,10 @@ font:
   - file: "gfonts://Roboto@700"
     id: font_small
     size: 16
+    glyphs: *glyphs
+  - file: "gfonts://Roboto@700"
+    id: font_gas
+    size: 40
     glyphs: *glyphs
 
 button:
@@ -158,6 +162,15 @@ sensor:
       int y = (1-(4.1-id(batt_volt).state)/(4.1-3.3))*100;
       if (y < 100) {return y;} else {return 100;};
     update_interval: 300s
+
+  # Gasprijs van vandaag, rechtstreeks uit de Zonneplan-integratie. Dit is de
+  # all-in dagprijs (incl. energiebelasting en btw); de gasdag loopt van 06:00
+  # tot 06:00. internal: true zodat hij niet weer terug naar HA gepubliceerd
+  # wordt.
+  - platform: homeassistant
+    id: gas_price
+    entity_id: sensor.zonneplan_current_tariff_gas
+    internal: true
 
 text_sensor:
   - platform: homeassistant
@@ -373,6 +386,18 @@ display:
         char sub[28];
         snprintf(sub, sizeof(sub), "ct goedkoopst om %02d:00", (int) roundf(idx_min * 24.0f / count));
         it.print(940, 84, id(font_price_unit), black, TextAlign::TOP_RIGHT, sub);
+      }
+
+      // ---- 4b. Gasprijs, links van het grote getal ---------------------------
+      // Alleen bij "vandaag": Zonneplan publiceert geen gasdagprijs voor
+      // morgen, dus daar zou dit getal stilzwijgend de prijs van vandaag zijn.
+      if (is_today && id(gas_price).has_state() && id(gas_price).state > 0) {
+        char gas_buf[16];
+        snprintf(gas_buf, sizeof(gas_buf), "%.2f", id(gas_price).state);
+        for (char *p = gas_buf; *p; p++) if (*p == '.') *p = ',';
+        it.print(740, 36, id(font_gas), black, TextAlign::TOP_RIGHT, gas_buf);
+        it.print(740, 84, id(font_price_unit), black, TextAlign::TOP_RIGHT,
+                 "€/m³ gas");
       }
 
       // ---- 5. Grafiek instellingen --------------------------------------------
