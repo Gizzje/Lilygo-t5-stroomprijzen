@@ -93,7 +93,8 @@ day-ahead-fetch. Het half-uurritme is er vooral voor zelfherstel: staat de
 integratie bij HA-opstart nog niet klaar, dan is de sensor binnen 30 minuten
 alsnog gevuld.
 
-Het apparaat wordt om **00:07** en **22:02** wakker. Bij die geplande wakes kiest het scherm zelf de
+Het apparaat wordt standaard om **00:07** en **22:02** wakker. Met knop 3 zet je
+het op **elk uur** (zie Bediening). Bij die geplande wakes kiest het scherm zelf de
 logische weergave: 's nachts vandaag, vanaf 22:00 morgen. Zo zie je 's avonds
 of je de vaatwasser 's nachts moet laten draaien of beter tot morgenmiddag
 kunt wachten.
@@ -122,6 +123,27 @@ Zijn de prijzen van morgen nog niet gepubliceerd, dan toont het scherm
 firmware vergelijkt daarvoor het `datum`-attribuut van de sensor met zijn eigen
 berekende datum van morgen; komen die niet overeen, dan is de sensor blijven
 hangen op een mislukte fetch.
+
+### Knop 3: het ververstempo
+
+Standaard wordt het scherm twee keer per dag getekend. Dat is zuinig, maar het
+"huidige uur" klopt dan een groot deel van de dag niet meer. Knop 3 (GPIO35)
+schakelt naar **elk uur op HH:07**, met een **nachtbesparing**: tussen 01:00 en
+05:00 slaat hij de wakes over — er verandert 's nachts toch niets aan het beeld
+dat je dan ziet. Dat zijn 20 wakes per dag in plaats van 24.
+
+Reken op ongeveer **tienmaal het accuverbruik** van de zuinige stand: ~5 minuten
+per dag wakker (inclusief het OTA-venster van 10 s per wake) tegenover ~30
+seconden. Nog eens drukken zet hem terug.
+
+De keuze staat in een global met `restore_value: yes` en overleeft dus deep
+sleep. Welke stand actief is lees je linksonder op het scherm af:
+`bijgewerkt 14:07 - elk uur` of `- 2x per dag`.
+
+> **Knop 3 kan het apparaat niet wekken** — alleen GPIO39 kan dat. Wek hem dus
+> eerst met knop 1 of de resetknop, en druk daarna op knop 3. Sinds deze
+> wijziging start elke knopdruk het wakkere venster van 10 seconden opnieuw
+> (`mode: restart` op het `enter_sleep`-script), dus je hebt rustig de tijd.
 
 De middelste knop (GPIO34) houdt het apparaat wakker voor onderhoud/OTA.
 
@@ -176,7 +198,7 @@ epdiy-boarddefinitie.
 |---|---|
 | 39 | Wake uit deep sleep + **wisselen tussen vandaag en morgen** (bovenste zijknop) |
 | 34 | Stay-awake: houdt het apparaat wakker voor onderhoud/OTA |
-| 35 | Vrij |
+| 35 | Ververstempo: elk uur ↔ 2x per dag |
 | 36 | Accuspanning (ADC, deler x2) |
 
 Knop 1 moest de wisselknop worden omdat hij als enige het apparaat kan wekken:

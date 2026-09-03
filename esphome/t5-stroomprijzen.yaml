@@ -122,6 +122,7 @@ binary_sensor:
     on_press:
       then:
         - component.update: t5_display
+        - script.execute: enter_sleep
 
   # Onderhoudsknop: houdt het apparaat wakker zodat je rustig kunt OTA'en.
   - platform: gpio
@@ -141,6 +142,18 @@ binary_sensor:
       number: GPIO35
       inverted: true
     name: "${esp_name} Button 3"
+
+    # Ververstempo omschakelen. Werkt alleen terwijl het apparaat wakker is
+    # (alleen GPIO39 kan wekken), dus: eerst wekken met knop 1 of reset,
+    # daarna binnen het wakkere venster op knop 3.
+    on_press:
+      then:
+        - lambda: |-
+            id(hourly_mode) = !id(hourly_mode);
+            ESP_LOGI("stroomprijzen", "Ververstempo -> %s",
+                     id(hourly_mode) ? "elk uur (niet 01-05u)" : "2x per dag");
+        - component.update: t5_display
+        - script.execute: enter_sleep
 
 sensor:
   - platform: adc
@@ -215,6 +228,14 @@ globals:
     restore_value: no
     initial_value: 'false'
 
+  # false = het zuinige schema (00:07 en 22:02), true = elk uur op HH:07 met
+  # nachtbesparing. Knop 3 schakelt om; restore_value zodat de keuze de deep
+  # sleep overleeft.
+  - id: hourly_mode
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
 script:
   - id: all_data_received
     then:
@@ -246,6 +267,9 @@ script:
       - script.execute: enter_sleep
 
   - id: enter_sleep
+    # restart: elke knopdruk geeft een vers venster van 10 seconden, zodat je
+    # rustig kunt doorklikken zonder dat hij onder je handen in slaap valt.
+    mode: restart
     then:
       # 10 seconden wakker blijven geeft een comfortabel OTA-venster bij elke
       # wake. Kost ~20 s extra wakker per dag; verwaarloosbaar op accu.
@@ -265,7 +289,19 @@ script:
             const int target1 = 0 * 3600 + 7 * 60;    // 00:07
             const int target2 = 22 * 3600 + 2 * 60;   // 22:02
             int next_s;
-            if (now_s < target1) {
+            if (id(hourly_mode)) {
+              // Elk uur op HH:07. Nachtbesparing: na 00:07 slaan we 01 t/m 04
+              // over en gaat hij pas om 05:07 weer aan. Dat scheelt vier
+              // wakes per nacht en je mist er niets mee - de prijzen van die
+              // uren staan al op het scherm.
+              next_s = -1;
+              for (int hh = 0; hh < 24; hh++) {
+                if (hh > 0 && hh < 5) continue;
+                int cand = hh * 3600 + 7 * 60;
+                if (cand > now_s) { next_s = cand; break; }
+              }
+              if (next_s < 0) next_s = 24 * 3600 + 7 * 60;   // morgen 00:07
+            } else if (now_s < target1) {
               next_s = target1;
             } else if (now_s < target2) {
               next_s = target2;
@@ -523,14 +559,15 @@ display:
 
       // laatst bijgewerkt + batterij, klein onderaan (y=496, niet 505: anders
       // valt de regel deels achter de behuizing)
-      char upd[32] = "";
+      char upd[48] = "";
       if (id(ha_time).now().is_valid()) {
         auto t = id(ha_time).now();
-        snprintf(upd, sizeof(upd), "scherm bijgewerkt %02d:%02d", t.hour, t.minute);
+        snprintf(upd, sizeof(upd), "bijgewerkt %02d:%02d - %s", t.hour, t.minute,
+                 id(hourly_mode) ? "elk uur" : "2x per dag");
       }
       it.print(20, 496, id(font_small), black, TextAlign::TOP_LEFT, upd);
-      it.print(480, 496, id(font_small), black, TextAlign::TOP_CENTER,
-               "knop bovenop: wissel vandaag/morgen");
+      it.print(520, 496, id(font_small), black, TextAlign::TOP_CENTER,
+               "knop 1: vandaag/morgen    knop 3: tempo");
 
       if (id(batt).has_state()) {
         char bb[24];

@@ -427,3 +427,52 @@ zonder op de volgende tijdtrigger te wachten.
 De gedeelde `glyphs`-anchor moest `€³` erbij voor "€/m³ gas". Vergeet je dat,
 dan faalt de build met `Codepoint 0x000020ac not found in font`. Dezelfde
 valkuil als eerder met de `/` voor "ct/kWh".
+
+---
+
+## 10. Een tweede knop terwijl er maar één kan wekken
+
+Knop 3 (GPIO35) schakelt het ververstempo om: elk uur, of het zuinige schema van
+twee keer per dag. Twee dingen die daarbij tegenvielen.
+
+**Knop 3 kan niet wekken.** Dat is dezelfde ext1-beperking als in hoofdstuk 7:
+de wakeup staat op `ALL_LOW` en zou dus vereisen dat je *alle* opgegeven pinnen
+tegelijk laag maakt. Knop 3 werkt daarom alleen terwijl het apparaat al wakker
+is: eerst wekken met knop 1 of de resetknop, dan pas knop 3.
+
+**Het wakkere venster liep af onder je handen.** Het `enter_sleep`-script begint
+met `delay: 10s`, geteld vanaf het moment dat het script start. Druk je op t=9 s
+op een knop, dan is er geen tijd meer om de hertekening (~3,5 s) te zien.
+Oplossing: het script `mode: restart` geven en het vanuit elke `on_press`
+opnieuw aanroepen:
+
+```yaml
+script:
+  - id: enter_sleep
+    mode: restart
+    then:
+      - delay: 10s
+      ...
+```
+
+Zonder `mode: restart` doet een tweede `script.execute` niets: de default is
+`single`, en die negeert een tweede aanroep (met een waarschuwing in de log).
+
+### De nachtbesparing
+
+In uurmodus slaat de slaaplambda de uren 01 t/m 04 over. Belangrijk detail:
+**00:07 blijft wél staan**, want dat is het moment waarop de datum omslaat en de
+sensoren de nieuwe dag publiceren. De volgende wake is dan pas 05:07.
+
+```cpp
+next_s = -1;
+for (int hh = 0; hh < 24; hh++) {
+  if (hh > 0 && hh < 5) continue;
+  int cand = hh * 3600 + 7 * 60;
+  if (cand > now_s) { next_s = cand; break; }
+}
+if (next_s < 0) next_s = 24 * 3600 + 7 * 60;   // morgen 00:07
+```
+
+De `next_s < 0`-tak is niet theoretisch: druk je 's avonds na 23:07 op een knop,
+dan ligt er geen kandidaat meer vóór middernacht.
