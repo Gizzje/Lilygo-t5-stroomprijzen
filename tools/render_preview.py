@@ -163,7 +163,9 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
     tempo = "elk uur" if hourly else "1x per dag"
     draw_text(d, (20, 496), f"bijgewerkt {updated_str} - {tempo}", f_small)
     draw_text(d, (545, 496), "buitenste: vandaag/morgen    midden: tempo", f_small, anchor="ma")
-    draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
+    # De firmware toont een percentage (uit de template-sensor "Accu"), geen
+    # voltage. Deze regel liep uit de pas met de lambda.
+    draw_text(d, (940, 496), f"batterij {BATT:.0f}%", f_small, anchor="ra")
 
     img.save(filename)
     print("saved", filename)
@@ -179,6 +181,7 @@ tomorrow = [0.304, 0.281, 0.271, 0.271, 0.262, 0.263, 0.292, 0.315, 0.316, 0.298
             0.314, 0.318, 0.312, 0.301]
 
 GAS = 1.67   # EUR/m3, sensor.zonneplan_current_tariff_gas
+BATT = 84    # %, zoals de firmware het toont
 
 def render_unknown(filename, updated_str="09:20"):
     """Wat je ziet als je naar morgen wisselt terwijl de day-ahead prijzen nog
@@ -191,7 +194,9 @@ def render_unknown(filename, updated_str="09:20"):
     draw_text(d, (480, 300), "Druk op de linker- of rechterknop om te wisselen", f_footer, anchor="ma")
     draw_text(d, (20, 496), f"bijgewerkt {updated_str}", f_small)
     draw_text(d, (545, 496), "buitenste: vandaag/morgen    midden: tempo", f_small, anchor="ma")
-    draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
+    # De firmware toont een percentage (uit de template-sensor "Accu"), geen
+    # voltage. Deze regel liep uit de pas met de lambda.
+    draw_text(d, (940, 496), f"batterij {BATT:.0f}%", f_small, anchor="ra")
     img.save(filename)
     print("saved", filename)
 
