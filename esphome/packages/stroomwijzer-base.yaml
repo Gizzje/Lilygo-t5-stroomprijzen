@@ -417,14 +417,26 @@ display:
         current_idx = hour < count ? hour : count - 1;
       }
 
-      // ---- 4. Rechtsboven: bij "vandaag" de huidige prijs, bij "morgen" het
-      //         goedkoopste moment van de getoonde dag -------------------------
-      if (is_today) {
+      // ---- 4. Rechtsboven --------------------------------------------------
+      // "vandaag" + uurmodus  -> de huidige prijs
+      // "vandaag" + 1x per dag -> het daggemiddelde. Het scherm is dan een
+      //                           momentopname van middernacht, dus een
+      //                           "nu"-prijs zou de hele dag die van 00:00
+      //                           zijn. Dat is geen kleine onnauwkeurigheid
+      //                           maar gewoon een verkeerd getal.
+      // "morgen"               -> het goedkoopste moment van die dag
+      if (is_today && id(hourly_mode)) {
         char cur_buf[16];
         snprintf(cur_buf, sizeof(cur_buf), "%.1f", prices[current_idx] * 100.0f);
         for (char *p = cur_buf; *p; p++) if (*p == '.') *p = ',';
         it.print(940, 4, id(font_price_big), black, TextAlign::TOP_RIGHT, cur_buf);
         it.print(940, 84, id(font_price_unit), black, TextAlign::TOP_RIGHT, "ct/kWh nu");
+      } else if (is_today) {
+        char avg_buf[16];
+        snprintf(avg_buf, sizeof(avg_buf), "%.1f", avg * 100.0f);
+        for (char *p = avg_buf; *p; p++) if (*p == '.') *p = ',';
+        it.print(940, 4, id(font_price_big), black, TextAlign::TOP_RIGHT, avg_buf);
+        it.print(940, 84, id(font_price_unit), black, TextAlign::TOP_RIGHT, "ct gemiddeld");
       } else {
         char min_buf[16];
         snprintf(min_buf, sizeof(min_buf), "%.1f", price_min * 100.0f);
@@ -498,8 +510,10 @@ display:
         int h = baseline_y - top_y;
         if (h < 1) h = 1;
 
-        if (is_today && i == current_idx) {
-          // huidig uur: volledig zwart gevuld + dikkere rand
+        if (is_today && id(hourly_mode) && i == current_idx) {
+          // Huidig uur: volledig zwart gevuld + dikkere rand. Alleen in de
+          // uurmodus - bij 1x per dag zou deze balk de hele dag op middernacht
+          // blijven staan en dus het verkeerde uur aanwijzen.
           it.filled_rectangle(bar_x, top_y, bar_w, h, black);
           it.rectangle(bar_x - 1, top_y - 1, bar_w + 2, h + 1, black);
         } else {
@@ -531,8 +545,9 @@ display:
       }
       it.print(chart_x + chart_w + 8, y_avg_line, id(font_axis), black, TextAlign::CENTER_LEFT, "gem");
 
-      // pijltje boven de huidige balk (alleen zinvol bij "vandaag")
-      if (is_today) {
+      // Pijltje boven de huidige balk. Alleen zinvol bij "vandaag" en alleen
+      // in de uurmodus - zie de zwarte balk hierboven.
+      if (is_today && id(hourly_mode)) {
         int cur_bar_x = chart_x + current_idx * (bar_w + gap) + bar_w / 2;
         it.filled_triangle(cur_bar_x - 6, chart_y - 14, cur_bar_x + 6, chart_y - 14, cur_bar_x, chart_y - 2, black);
       }
@@ -574,7 +589,7 @@ display:
       if (id(ha_time).now().is_valid()) {
         auto t = id(ha_time).now();
         snprintf(upd, sizeof(upd), "bijgewerkt %02d:%02d - %s", t.hour, t.minute,
-                 id(hourly_mode) ? "elk uur" : "2x per dag");
+                 id(hourly_mode) ? "elk uur" : "1x per dag");
       }
       it.print(20, 496, id(font_small), black, TextAlign::TOP_LEFT, upd);
       // Knopvolgorde zoals de gebruiker er tegenaan kijkt:

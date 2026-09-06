@@ -56,10 +56,16 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
     draw_text(d, (20, 52), date_str, f_footer)
     d.line([(0, 114), (960, 114)], fill=BLACK, width=1)
 
-    if is_today:
+    if is_today and hourly:
         cur = f"{prices[current_idx]*100:.1f}".replace(".", ",")
         draw_text(d, (940, 4), cur, f_price_big, anchor="ra")
         draw_text(d, (940, 84), "ct/kWh nu", f_price_unit, anchor="ra")
+    elif is_today:
+        # 1x per dag: het scherm is een momentopname van middernacht, dus een
+        # "nu"-prijs zou de hele dag die van 00:00 zijn.
+        a = f"{avg*100:.1f}".replace(".", ",")
+        draw_text(d, (940, 4), a, f_price_big, anchor="ra")
+        draw_text(d, (940, 84), "ct gemiddeld", f_price_unit, anchor="ra")
     else:
         m = f"{price_min*100:.1f}".replace(".", ",")
         draw_text(d, (940, 4), m, f_price_big, anchor="ra")
@@ -111,7 +117,7 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
         if baseline_y - top_y < 1:
             top_y = baseline_y - 1
 
-        if is_today and i == current_idx:
+        if is_today and hourly and i == current_idx:
             d.rectangle([bar_x, top_y, bar_x + bar_w - 1, baseline_y - 1], fill=BLACK)
         else:
             norm = max(0.0, min(1.0, (prices[i] - price_min) / rng))
@@ -129,7 +135,7 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
         gx += 10
     draw_text(d, (chart_x + chart_w + 8, y_avg_line), "gem", f_axis, anchor="lm")
 
-    if is_today:
+    if is_today and hourly:
         cx = chart_x + current_idx * (bar_w + gap) + bar_w // 2
         d.polygon([(cx - 6, chart_y - 14), (cx + 6, chart_y - 14), (cx, chart_y - 2)], fill=BLACK)
 
@@ -151,7 +157,7 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
               f"Hoogste: {price_max*100:.1f}".replace(".", ",") + f" ct ({max_h:02d}:00)", f_footer_bold)
 
     # was y=505 -> viel tegen de onderrand aan; nu 496
-    tempo = "elk uur" if hourly else "2x per dag"
+    tempo = "elk uur" if hourly else "1x per dag"
     draw_text(d, (20, 496), f"bijgewerkt {updated_str} - {tempo}", f_small)
     draw_text(d, (545, 496), "buitenste: vandaag/morgen    midden: tempo", f_small, anchor="ma")
     draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
@@ -187,6 +193,7 @@ def render_unknown(filename, updated_str="09:20"):
     print("saved", filename)
 
 
-render(today, True, 14, "03-09-2026", "../docs/preview-vandaag.png", updated_str="14:07", gas=GAS, hourly=True)
-render(tomorrow, False, 0, "04-09-2026", "../docs/preview-morgen.png", updated_str="21:37")
+render(today, True, 0, "06-09-2026", "../docs/preview-vandaag.png", updated_str="00:00", gas=GAS, hourly=False)
+render(today, True, 14, "06-09-2026", "../docs/preview-vandaag-uurmodus.png", updated_str="14:00", gas=GAS, hourly=True)
+render(tomorrow, False, 0, "07-09-2026", "../docs/preview-morgen.png", updated_str="21:37")
 render_unknown("../docs/preview-morgen-onbekend.png")

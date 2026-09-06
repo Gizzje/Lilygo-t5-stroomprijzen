@@ -6,7 +6,15 @@ kale spotprijs. Draait op ESPHome, haalt zijn data uit Home Assistant
 (Zonneplan), en werkt op accu: het apparaat slaapt en wordt twee keer per dag
 wakker om het scherm bij te werken. De gasprijs van de dag staat er ook bij.
 
-![Dashboard - vandaag](docs/preview-vandaag.png)
+![Dashboard - vandaag, 1x per dag](docs/preview-vandaag.png)
+
+In de zuinige stand (1x per dag) wordt het scherm alleen om middernacht
+getekend. Alles wat "nu" beweert te zijn zou dan de hele dag de waarde van
+00:00 tonen, dus die dingen staan er niet: geen zwarte balk voor het huidige
+uur, geen pijltje, en rechtsboven het **daggemiddelde** in plaats van een
+"nu"-prijs. Zet je met de middelste knop de uurmodus aan, dan komen ze terug:
+
+![Dashboard - vandaag, uurmodus](docs/preview-vandaag-uurmodus.png)
 
 Boven de balk van het huidige uur staat een pijltje; het rondje markeert het
 goedkoopste uur. Donkerder grijs = duurder. Links van de huidige prijs staat de
@@ -141,6 +149,12 @@ De middelste knop (IO35) schakelt naar **elk heel uur**, met een
 **nachtbesparing**: tussen 01:00 en 05:00 slaat hij de wakes over — er verandert
 's nachts toch niets aan het beeld dat je dan ziet. Dat zijn 20 wakes per dag in
 plaats van 24.
+
+**In de zuinige stand verdwijnt alles wat "nu" betekent.** Het scherm is dan
+een momentopname van middernacht: de zwarte balk van het huidige uur, het
+pijltje erboven en de "ct/kWh nu" zouden de hele dag het verkeerde moment
+aanwijzen. Rechtsboven staat daar het daggemiddelde. In de uurmodus klopt het
+allemaal wel en komt het terug.
 
 **Op het hele uur, niet op het klokje van de knopdruk.** De wake-momenten zijn
 absolute klokmomenten (09:00, 10:00, …), geen "nu plus een uur". Schakel je om
