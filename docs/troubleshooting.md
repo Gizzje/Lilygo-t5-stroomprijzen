@@ -432,13 +432,13 @@ valkuil als eerder met de `/` voor "ct/kWh".
 
 ## 10. Een tweede knop terwijl er maar één kan wekken
 
-Knop 3 (GPIO35) schakelt het ververstempo om: elk uur, of het zuinige schema van
-twee keer per dag. Twee dingen die daarbij tegenvielen.
+De middelste knop (IO35) schakelt het ververstempo om: elk heel uur, of het
+zuinige schema van alleen middernacht. Twee dingen die daarbij tegenvielen.
 
-**Knop 3 kan niet wekken.** Dat is dezelfde ext1-beperking als in hoofdstuk 7:
+**Die knop kan niet wekken.** Dat is dezelfde ext1-beperking als in hoofdstuk 7:
 de wakeup staat op `ALL_LOW` en zou dus vereisen dat je *alle* opgegeven pinnen
-tegelijk laag maakt. Knop 3 werkt daarom alleen terwijl het apparaat al wakker
-is: eerst wekken met knop 1 of de resetknop, dan pas knop 3.
+tegelijk laag maakt. Hij werkt daarom alleen terwijl het apparaat al wakker is:
+eerst wekken met de linker- of rechterknop, dan pas de middelste.
 
 **Het wakkere venster liep af onder je handen.** Het `enter_sleep`-script begint
 met `delay: 10s`, geteld vanaf het moment dat het script start. Druk je op t=9 s

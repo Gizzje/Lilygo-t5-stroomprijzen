@@ -218,7 +218,7 @@ globals:
     initial_value: 'false'
 
   # false = vandaag, true = morgen. Blijft bewaard over deep sleep heen, want
-  # knop 1 schakelt hem om t.o.v. de vorige stand.
+  # de buitenste knoppen schakelen hem om t.o.v. de vorige stand.
   - id: show_tomorrow
     type: bool
     restore_value: yes
@@ -231,9 +231,9 @@ globals:
     restore_value: no
     initial_value: 'false'
 
-  # false = het zuinige schema (00:07 en 22:02), true = elk uur op HH:07 met
-  # nachtbesparing. Knop 3 schakelt om; restore_value zodat de keuze de deep
-  # sleep overleeft.
+  # false = het zuinige schema (alleen middernacht), true = elk heel uur met
+  # nachtbesparing. De middelste knop schakelt om; restore_value zodat de
+  # keuze de deep sleep overleeft.
   - id: hourly_mode
     type: bool
     restore_value: yes
@@ -249,7 +249,7 @@ script:
           if (!id(view_decided)) {
             id(view_decided) = true;
             esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-            // TIMER = geplande wake (00:07 / 22:02) -> standaardweergave voor
+            // TIMER = geplande wake -> standaardweergave voor
             // dat tijdstip. Al het andere is een menselijke actie: de knop op
             // GPIO39 geeft EXT1, de resetknop geeft UNDEFINED. Allebei
             // omschakelen, zodat het niet uitmaakt welke knop je pakt.
@@ -337,7 +337,7 @@ display:
       const auto black = Color(0, 0, 0);
 
       // ---- 1. CSV met dagprijzen (EUR/kWh) inlezen en parsen ----------------
-      // Knop 1 schakelt tussen vandaag en morgen; show_tomorrow is al gezet
+      // De buitenste knoppen wisselen vandaag/morgen; show_tomorrow is al gezet
       // in het all_data_received-script.
       bool is_today = !id(show_tomorrow);
       std::string csv     = is_today ? id(prices_csv).state  : id(prices_morgen_csv).state;
