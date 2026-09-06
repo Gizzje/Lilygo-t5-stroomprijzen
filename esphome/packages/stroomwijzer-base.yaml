@@ -568,18 +568,24 @@ display:
       int min_hour = (int) roundf(idx_min * 24.0f / count);
       int max_hour = (int) roundf(idx_max * 24.0f / count);
 
-      char min_s[10], max_s[10], avg_s[10];
+      char min_s[10], max_s[10];
       snprintf(min_s, sizeof(min_s), "%.1f", price_min * 100.0f);
       snprintf(max_s, sizeof(max_s), "%.1f", price_max * 100.0f);
-      snprintf(avg_s, sizeof(avg_s), "%.1f", avg * 100.0f);
       for (char *p = min_s; *p; p++) if (*p == '.') *p = ',';
       for (char *p = max_s; *p; p++) if (*p == '.') *p = ',';
-      for (char *p = avg_s; *p; p++) if (*p == '.') *p = ',';
+
+      // Middelste slot: de spreiding, niet het gemiddelde. Dat laatste staat in
+      // de zuinige stand al groot rechtsboven, en de stippellijn "gem" laat het
+      // in beide standen zien. De spreiding zegt wat je met timing kunt winnen
+      // en stond nergens. De verhouding (2,4x) erbij paste niet: dan loopt deze
+      // regel tegen "Hoogste" aan.
+      char mid_s[32];
+      snprintf(mid_s, sizeof(mid_s), "Spreiding: %.1f ct", (price_max - price_min) * 100.0f);
+      for (char *p = mid_s; *p; p++) if (*p == '.') *p = ',';
 
       it.printf(20, baseline_y + 38, id(font_footer_bold), black, TextAlign::TOP_LEFT,
                 "Laagste: %s ct (%02d:00)", min_s, min_hour);
-      it.printf(340, baseline_y + 38, id(font_footer), black, TextAlign::TOP_LEFT,
-                "Gemiddeld: %s ct", avg_s);
+      it.print(340, baseline_y + 38, id(font_footer), black, TextAlign::TOP_LEFT, mid_s);
       it.printf(600, baseline_y + 38, id(font_footer_bold), black, TextAlign::TOP_LEFT,
                 "Hoogste: %s ct (%02d:00)", max_s, max_hour);
 

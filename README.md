@@ -16,6 +16,11 @@ uur, geen pijltje, en rechtsboven het **daggemiddelde** in plaats van een
 
 ![Dashboard - vandaag, uurmodus](docs/preview-vandaag-uurmodus.png)
 
+De voettekst geeft laagste, **spreiding** en hoogste. Die spreiding — het gat
+tussen goedkoopste en duurste uur — zegt wat je met timing kunt winnen; het
+gemiddelde stond daar eerst, maar dat is al af te lezen aan de stippellijn
+"gem" in de grafiek.
+
 Boven de balk van het huidige uur staat een pijltje; het rondje markeert het
 goedkoopste uur. Donkerder grijs = duurder. Links van de huidige prijs staat de
 gasdagprijs. Bij de "morgen"-weergave vervalt de huidige prijs rechtsboven en

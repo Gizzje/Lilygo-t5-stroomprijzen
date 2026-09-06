@@ -151,8 +151,11 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
     min_h, max_h = round(idx_min * 24 / count), round(idx_max * 24 / count)
     draw_text(d, (20, baseline_y + 38),
               f"Laagste: {price_min*100:.1f}".replace(".", ",") + f" ct ({min_h:02d}:00)", f_footer_bold)
-    draw_text(d, (340, baseline_y + 38),
-              f"Gemiddeld: {avg*100:.1f}".replace(".", ",") + " ct", f_footer)
+    # Spreiding in plaats van het gemiddelde: dat staat in de zuinige stand al
+    # groot rechtsboven, en de stippellijn "gem" laat het altijd zien. De
+    # verhouding (2,4x) paste er niet naast zonder tegen "Hoogste" aan te lopen.
+    mid = f"Spreiding: {(price_max - price_min) * 100:.1f} ct"
+    draw_text(d, (340, baseline_y + 38), mid.replace(".", ","), f_footer)
     draw_text(d, (600, baseline_y + 38),
               f"Hoogste: {price_max*100:.1f}".replace(".", ",") + f" ct ({max_h:02d}:00)", f_footer_bold)
 
