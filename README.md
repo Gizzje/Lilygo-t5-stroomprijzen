@@ -49,7 +49,7 @@ Zonneplan (HACS-integratie fsaris/home-assistant-zonneplan-one)
         │
         └─ sensor.zonneplan_current_tariff_gas   (EUR/m3, dagprijs)
                 ▼  (ESPHome native API)
-        LilyGo T5 4.7"  ← heeft beide dagen, knop 1 wisselt ertussen
+        LilyGo T5 4.7"  ← heeft beide dagen, buitenste knoppen wisselen
 ```
 
 **Twee sensoren, elk met een vaste betekenis.** Dat is nodig omdat het scherm
@@ -93,26 +93,35 @@ day-ahead-fetch. Het half-uurritme is er vooral voor zelfherstel: staat de
 integratie bij HA-opstart nog niet klaar, dan is de sensor binnen 30 minuten
 alsnog gevuld.
 
-Het apparaat wordt standaard om **00:07** en **22:02** wakker. Met knop 3 zet je
-het op **elk uur** (zie Bediening). Bij die geplande wakes kiest het scherm zelf de
+Het apparaat wordt standaard alleen om **00:00** wakker — dat is het moment
+waarop de datum omslaat. Met de middelste knop zet je het op **elk heel uur**
+(zie Bediening). Bij die geplande wakes kiest het scherm zelf de
 logische weergave: 's nachts vandaag, vanaf 22:00 morgen. Zo zie je 's avonds
 of je de vaatwasser 's nachts moet laten draaien of beter tot morgenmiddag
 kunt wachten.
 
 ## Bediening
 
-**Elke knopdruk wisselt tussen vandaag en morgen** - zowel de wake-knop
-(IO39) als de resetknop (RST). Indrukken wekt het apparaat, het wisselt van
-dag en tekent opnieuw. Nog eens indrukken brengt je terug.
+Zo staan de knoppen erop, van links naar rechts zoals je ernaar kijkt:
 
-Dat het ook op RST werkt is bewust: op de T5 4.7" staan de knoppen in de
-volgorde **IO39 - IO34 - IO35 - IO0 - RST**, en RST is voor de meeste mensen
-de knop die het makkelijkst te vinden is. Deep sleep verlaten via een reset
-kost net zoveel als via de wake-pin, dus er is geen reden om je naar een
-specifieke knop te dwingen.
+| positie | pin | functie |
+|---|---|---|
+| **links** | RST | wisselen vandaag ↔ morgen (via een reset) |
+| links-midden | IO0 | — |
+| **midden** | IO35 | ververstempo: elk uur ↔ 1x per dag |
+| rechts-midden | IO34 | stay-awake voor onderhoud/OTA |
+| **rechts** | IO39 | wekken + wisselen vandaag ↔ morgen |
 
-Alleen een **geplande wake** (00:07 / 22:02) kiest zelf: 's nachts vandaag,
-'s avonds morgen. De firmware onderscheidt dat aan de wake-oorzaak - is die
+**De buitenste twee knoppen wisselen tussen vandaag en morgen.** Indrukken wekt
+het apparaat, het wisselt van dag en tekent opnieuw. Nog eens indrukken brengt
+je terug.
+
+Dat het ook op RST werkt is bewust: dat is voor de meeste mensen de knop die het
+makkelijkst te vinden is, en deep sleep verlaten via een reset kost net zoveel
+als via de wake-pin.
+
+Alleen een **geplande wake** kiest zelf welke dag: 's nachts vandaag, vanaf
+22:00 morgen. De firmware onderscheidt dat aan de wake-oorzaak - is die
 `ESP_SLEEP_WAKEUP_TIMER`, dan is het de klok; al het andere is een mens.
 
 > Ook een herstart na een OTA-update telt als knopdruk, dus vlak na het
@@ -124,13 +133,19 @@ firmware vergelijkt daarvoor het `datum`-attribuut van de sensor met zijn eigen
 berekende datum van morgen; komen die niet overeen, dan is de sensor blijven
 hangen op een mislukte fetch.
 
-### Knop 3: het ververstempo
+### De middelste knop: het ververstempo
 
-Standaard wordt het scherm twee keer per dag getekend. Dat is zuinig, maar het
-"huidige uur" klopt dan een groot deel van de dag niet meer. Knop 3 (GPIO35)
-schakelt naar **elk uur op HH:07**, met een **nachtbesparing**: tussen 01:00 en
-05:00 slaat hij de wakes over — er verandert 's nachts toch niets aan het beeld
-dat je dan ziet. Dat zijn 20 wakes per dag in plaats van 24.
+Standaard wordt het scherm één keer per dag getekend, om middernacht. Dat is
+zuinig, maar het "huidige uur" klopt dan een groot deel van de dag niet meer.
+De middelste knop (IO35) schakelt naar **elk heel uur**, met een
+**nachtbesparing**: tussen 01:00 en 05:00 slaat hij de wakes over — er verandert
+'s nachts toch niets aan het beeld dat je dan ziet. Dat zijn 20 wakes per dag in
+plaats van 24.
+
+**Op het hele uur, niet op het klokje van de knopdruk.** De wake-momenten zijn
+absolute klokmomenten (09:00, 10:00, …), geen "nu plus een uur". Schakel je om
+09:45 om, dan is de eerstvolgende tekening dus 10:00 — anders zou de markering
+van het huidige uur en de "nu"-prijs structureel drie kwartier scheef staan.
 
 Reken op ongeveer **tienmaal het accuverbruik** van de zuinige stand: ~5 minuten
 per dag wakker (inclusief het OTA-venster van 10 s per wake) tegenover ~30
@@ -138,14 +153,15 @@ seconden. Nog eens drukken zet hem terug.
 
 De keuze staat in een global met `restore_value: yes` en overleeft dus deep
 sleep. Welke stand actief is lees je linksonder op het scherm af:
-`bijgewerkt 14:07 - elk uur` of `- 2x per dag`.
+`bijgewerkt 14:00 - elk uur` of `- 2x per dag`.
 
-> **Knop 3 kan het apparaat niet wekken** — alleen GPIO39 kan dat. Wek hem dus
-> eerst met knop 1 of de resetknop, en druk daarna op knop 3. Sinds deze
-> wijziging start elke knopdruk het wakkere venster van 10 seconden opnieuw
+> **De middelste knop kan het apparaat niet wekken** — alleen IO39 kan dat. Wek
+> hem dus eerst met de linker- of rechterknop, en druk daarna op de middelste.
+> Elke knopdruk start het wakkere venster van 10 seconden opnieuw
 > (`mode: restart` op het `enter_sleep`-script), dus je hebt rustig de tijd.
 
-De middelste knop (GPIO34) houdt het apparaat wakker voor onderhoud/OTA.
+De knop rechts van het midden (IO34) houdt het apparaat wakker voor
+onderhoud/OTA.
 
 De **gasprijs** staat links van het grote getal, alleen in de vandaag-weergave.
 Zonneplan publiceert geen gasdagprijs voor morgen (de gasdag loopt van 06:00 tot
@@ -196,12 +212,12 @@ epdiy-boarddefinitie.
 
 | GPIO | Functie |
 |---|---|
-| 39 | Wake uit deep sleep + **wisselen tussen vandaag en morgen** (bovenste zijknop) |
+| 39 | Wake uit deep sleep + **wisselen tussen vandaag en morgen** (knop uiterst rechts) |
 | 34 | Stay-awake: houdt het apparaat wakker voor onderhoud/OTA |
-| 35 | Ververstempo: elk uur ↔ 2x per dag |
+| 35 | Ververstempo: elk uur ↔ 1x per dag (middelste knop) |
 | 36 | Accuspanning (ADC, deler x2) |
 
-Knop 1 moest de wisselknop worden omdat hij als enige het apparaat kan wekken:
+De rechterknop moest de wisselknop worden omdat hij als enige het apparaat kan wekken:
 de ESP32 ext1-wakeup staat op `ALL_LOW`, en dat betekent letterlijk "wek als
 *alle* opgegeven pinnen laag zijn". Een tweede pin toevoegen zou betekenen dat
 je twee knoppen tegelijk moet indrukken.
@@ -241,6 +257,9 @@ Kort samengevat; de volledige uitleg staat in
   de opslag is een contractvoorwaarde en de energiebelasting wijzigt jaarlijks.
 * **Dunne fonts ogen grijs op e-paper.** Niet de kleur of de grootte is het
   probleem maar het gewicht; alle fonts staan daarom op `@700`.
+* **Wake-momenten zijn absolute klokmomenten**, geen "nu + 1 uur" — anders
+  loopt de markering van het huidige uur permanent scheef met het moment waarop
+  je de modus aanzette.
 * **`deep_sleep.enter` negeert `deep_sleep.prevent`.** Wil je het apparaat
   wakker houden, gebruik dan een global + `wait_until`, zoals hier gedaan.
 * **ext1-wakeup met `ALL_LOW` en meerdere pinnen** wekt pas als *alle* pinnen

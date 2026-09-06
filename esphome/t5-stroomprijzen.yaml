@@ -112,7 +112,9 @@ button:
         - component.update: t5_display
 
 binary_sensor:
-  # Bovenste zijknop: wekt het apparaat uit deep sleep en hertekent het scherm.
+  # De RECHTER zijknop (GPIO39, gezien vanaf de voorkant met RST links). Als
+  # enige kan hij het apparaat uit deep sleep wekken; hij wisselt ook tussen
+  # vandaag en morgen. De resetknop helemaal links doet dat laatste ook.
   - platform: gpio
     pin:
       number: GPIO39
@@ -124,7 +126,8 @@ binary_sensor:
         - component.update: t5_display
         - script.execute: enter_sleep
 
-  # Onderhoudsknop: houdt het apparaat wakker zodat je rustig kunt OTA'en.
+  # Onderhoudsknop (GPIO34, tweede van rechts): houdt het apparaat wakker
+  # zodat je rustig kunt OTA'en.
   - platform: gpio
     pin:
       number: GPIO34
@@ -143,9 +146,9 @@ binary_sensor:
       inverted: true
     name: "${esp_name} Button 3"
 
-    # Ververstempo omschakelen. Werkt alleen terwijl het apparaat wakker is
-    # (alleen GPIO39 kan wekken), dus: eerst wekken met knop 1 of reset,
-    # daarna binnen het wakkere venster op knop 3.
+    # De MIDDELSTE knop (GPIO35) schakelt het ververstempo om. Werkt alleen
+    # terwijl het apparaat wakker is (alleen GPIO39 kan wekken), dus: eerst
+    # wekken met de linker- of rechterknop, daarna de middelste indrukken.
     on_press:
       then:
         - lambda: |-
@@ -285,29 +288,23 @@ script:
               return (uint32_t)(5 * 60 * 1000);  // tijd nog onbekend: probeer over 5 min opnieuw
             }
             int now_s = t.hour * 3600 + t.minute * 60 + t.second;
-            // buffer na 00:05/22:00 zodat de HA-sensor gegarandeerd al bijgewerkt is
-            const int target1 = 0 * 3600 + 7 * 60;    // 00:07
-            const int target2 = 22 * 3600 + 2 * 60;   // 22:02
-            int next_s;
+            // Alles op het HELE uur. Dat is geen cosmetica: het gemarkeerde
+            // uur en de "nu"-prijs zijn alleen betrouwbaar als de tekening op
+            // een uurgrens valt. Wissel je om 09:45 naar uurmodus, dan is de
+            // eerstvolgende tekening dus 10:00 en niet 10:45 - de kandidaten
+            // zijn absolute klokmomenten, geen "nu + 1 uur".
+            int next_s = -1;
             if (id(hourly_mode)) {
-              // Elk uur op HH:07. Nachtbesparing: na 00:07 slaan we 01 t/m 04
-              // over en gaat hij pas om 05:07 weer aan. Dat scheelt vier
-              // wakes per nacht en je mist er niets mee - de prijzen van die
-              // uren staan al op het scherm.
-              next_s = -1;
+              // Elk heel uur. Nachtbesparing: 01:00 t/m 04:00 overslaan.
+              // 00:00 blijft staan, want dan slaat de datum om en publiceert
+              // Home Assistant de prijzen van de nieuwe dag.
               for (int hh = 0; hh < 24; hh++) {
                 if (hh > 0 && hh < 5) continue;
-                int cand = hh * 3600 + 7 * 60;
+                int cand = hh * 3600;
                 if (cand > now_s) { next_s = cand; break; }
               }
-              if (next_s < 0) next_s = 24 * 3600 + 7 * 60;   // morgen 00:07
-            } else if (now_s < target1) {
-              next_s = target1;
-            } else if (now_s < target2) {
-              next_s = target2;
-            } else {
-              next_s = target1 + 24 * 3600;
             }
+            if (next_s < 0) next_s = 24 * 3600;   // eerstvolgende middernacht
             int wait_s = next_s - now_s;
             if (wait_s < 60) wait_s = 60;  // voorkom razendsnelle wake-loop
             ESP_LOGI("stroomprijzen", "Ga %d seconden slapen", wait_s);
@@ -385,7 +382,7 @@ display:
                  is_today ? "Wachten op prijsdata uit Home Assistant..."
                           : "Prijzen van morgen nog niet bekend");
         it.print(480, 300, id(font_footer), black, TextAlign::CENTER,
-                 "Druk op de bovenste knop om te wisselen");
+                 "Druk op de linker- of rechterknop om te wisselen");
         return;
       }
 
@@ -566,8 +563,10 @@ display:
                  id(hourly_mode) ? "elk uur" : "2x per dag");
       }
       it.print(20, 496, id(font_small), black, TextAlign::TOP_LEFT, upd);
-      it.print(520, 496, id(font_small), black, TextAlign::TOP_CENTER,
-               "knop 1: vandaag/morgen    knop 3: tempo");
+      // Knopvolgorde zoals de gebruiker er tegenaan kijkt:
+      // links RST - IO0 - IO35 (midden) - IO34 - IO39 rechts.
+      it.print(545, 496, id(font_small), black, TextAlign::TOP_CENTER,
+               "buitenste: vandaag/morgen    midden: tempo");
 
       if (id(batt).has_state()) {
         char bb[24];

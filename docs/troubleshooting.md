@@ -461,18 +461,57 @@ Zonder `mode: restart` doet een tweede `script.execute` niets: de default is
 ### De nachtbesparing
 
 In uurmodus slaat de slaaplambda de uren 01 t/m 04 over. Belangrijk detail:
-**00:07 blijft wél staan**, want dat is het moment waarop de datum omslaat en de
-sensoren de nieuwe dag publiceren. De volgende wake is dan pas 05:07.
+**00:00 blijft wél staan**, want dat is het moment waarop de datum omslaat en de
+sensoren de nieuwe dag publiceren. De volgende wake is dan pas 05:00. De code
+staat in hoofdstuk 11, samen met de reden dat het absolute klokmomenten zijn.
+
+---
+
+## 11. Wake-momenten: absolute klok, niet "nu plus een uur"
+
+Twee dingen die pas opvielen toen het echt op tafel lag.
+
+**Oriëntatie.** De knopvolgorde in hoofdstuk 7 (`IO39 - IO34 - IO35 - IO0 - RST`)
+is hoe het bord er van de andere kant uitziet. Zoals de gebruiker er in
+landschapsstand tegenaan kijkt is het omgekeerd: **links RST, rechts IO39, IO35
+in het midden**. Alle schermteksten zijn daarop aangepast — "de bovenste knop"
+zei niets meer sinds de oriëntatie van staand naar liggend ging. Als je een
+knop-hint op een scherm zet: beschrijf de *positie zoals de gebruiker hem ziet*,
+niet het pinnummer en niet de volgorde uit het datasheet.
+
+**Absolute klokmomenten.** In uurmodus wordt de wake berekend als het
+eerstvolgende hele uur, niet als "nu + 3600". Dat verschil is de hele reden dat
+de modus bestaat: schakel je om 09:45 om en zou de firmware `now + 1h` nemen,
+dan tekent hij om 10:45, 11:45, 12:45 … en staat de markering van het huidige
+uur structureel drie kwartier scheef. Met absolute kandidaten valt elke tekening
+op een uurgrens:
 
 ```cpp
-next_s = -1;
-for (int hh = 0; hh < 24; hh++) {
-  if (hh > 0 && hh < 5) continue;
-  int cand = hh * 3600 + 7 * 60;
-  if (cand > now_s) { next_s = cand; break; }
+int next_s = -1;
+if (id(hourly_mode)) {
+  for (int hh = 0; hh < 24; hh++) {
+    if (hh > 0 && hh < 5) continue;      // nachtbesparing
+    int cand = hh * 3600;
+    if (cand > now_s) { next_s = cand; break; }
+  }
 }
-if (next_s < 0) next_s = 24 * 3600 + 7 * 60;   // morgen 00:07
+if (next_s < 0) next_s = 24 * 3600;      // eerstvolgende middernacht
 ```
 
-De `next_s < 0`-tak is niet theoretisch: druk je 's avonds na 23:07 op een knop,
-dan ligt er geen kandidaat meer vóór middernacht.
+De `next_s < 0`-tak dekt twee gevallen tegelijk: de zuinige modus (die alleen
+middernacht kent) en de uurmodus na 23:00.
+
+**Middernacht is nu ook echt 00:00**, niet 00:07. Die zeven minuten waren een
+buffer: wacht tot de HA-sensor gegarandeerd is bijgewerkt. Dat is niet meer
+nodig, en de race is ook niet gevaarlijk meer:
+
+* De HA-sensoren verversen op `minutes: "/30"`, dus óók om 00:00:00, en HA's
+  scheduler is er eerder bij dan het apparaat — dat heeft eerst nog een boot en
+  een wifi-verbinding nodig (~4 s).
+* Zou het apparaat tóch de oude waarde binnenkrijgen, dan komt de nieuwe daarna
+  alsnog via de API binnen, vuurt `on_value` opnieuw, en dat draait
+  `all_data_received` — inclusief een nieuwe tekening. Sinds `enter_sleep`
+  `mode: restart` is, wordt het slaapvenster daarbij netjes opnieuw gestart.
+
+Het herstelt zichzelf dus, in plaats van dat je er een buffer voor moet
+verzinnen.

@@ -153,7 +153,7 @@ def render(prices, is_today, current_idx, date_str, filename, updated_str="21:03
     # was y=505 -> viel tegen de onderrand aan; nu 496
     tempo = "elk uur" if hourly else "2x per dag"
     draw_text(d, (20, 496), f"bijgewerkt {updated_str} - {tempo}", f_small)
-    draw_text(d, (520, 496), "knop 1: vandaag/morgen    knop 3: tempo", f_small, anchor="ma")
+    draw_text(d, (545, 496), "buitenste: vandaag/morgen    midden: tempo", f_small, anchor="ma")
     draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
 
     img.save(filename)
@@ -179,14 +179,14 @@ def render_unknown(filename, updated_str="09:20"):
     draw_text(d, (20, 14), "Stroomprijzen morgen", f_title)
     d.line([(0, 114), (960, 114)], fill=BLACK, width=1)
     draw_text(d, (480, 250), "Prijzen van morgen nog niet bekend", f_title, anchor="ma")
-    draw_text(d, (480, 300), "Druk op de bovenste knop om te wisselen", f_footer, anchor="ma")
+    draw_text(d, (480, 300), "Druk op de linker- of rechterknop om te wisselen", f_footer, anchor="ma")
     draw_text(d, (20, 496), f"bijgewerkt {updated_str}", f_small)
-    draw_text(d, (520, 496), "knop 1: vandaag/morgen    knop 3: tempo", f_small, anchor="ma")
+    draw_text(d, (545, 496), "buitenste: vandaag/morgen    midden: tempo", f_small, anchor="ma")
     draw_text(d, (940, 496), "batterij 4,53V", f_small, anchor="ra")
     img.save(filename)
     print("saved", filename)
 
 
 render(today, True, 14, "03-09-2026", "../docs/preview-vandaag.png", updated_str="14:07", gas=GAS, hourly=True)
-render(tomorrow, False, 0, "04-09-2026", "../docs/preview-morgen.png", updated_str="22:02")
+render(tomorrow, False, 0, "04-09-2026", "../docs/preview-morgen.png", updated_str="21:37")
 render_unknown("../docs/preview-morgen-onbekend.png")
