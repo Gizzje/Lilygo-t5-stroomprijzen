@@ -515,3 +515,84 @@ nodig, en de race is ook niet gevaarlijk meer:
 
 Het herstelt zichzelf dus, in plaats van dat je er een buffer voor moet
 verzinnen.
+
+---
+
+## 12. Twee apparaten, één config — en een hernoeming die bijna misging
+
+### Waarom de base in `packages/` staat
+
+ESPHome Builder toont **elk yaml-bestand in de hoofdmap** als apparaat. Zet je
+de gedeelde basisconfiguratie daar neer, dan verschijnt die als een derde
+apparaat dat niet compileert: `${esp_name}` is dan nergens gedefinieerd. In een
+submap gebeurt dat niet, en `!include packages/stroomwijzer-base.yaml` werkt
+gewoon.
+
+`external_components: path: components` hoeft daarbij **niet** aangepast te
+worden. ESPHome rekent dat pad vanaf de map van het *hoofdbestand*, niet vanaf
+het bestand waarin de sleutel staat.
+
+### Verwijderen in ESPHome Builder gooit het YAML-bestand echt weg
+
+Het gaat **niet** naar `archive/` — dat is een aparte actie in hetzelfde menu.
+Wat wel meegaat is de administratie in `/config/esphome/.device-builder.json`:
+daarin staat per configbestand het MAC-adres van het apparaat dat erop draait.
+Ontbreekt die regel, dan denkt de Builder dat het apparaat nog nooit geflasht
+is en eist hij een USB-kabel voor "de eerste installatie".
+
+Terugzetten kan met de hand:
+
+```json
+"stroomwijzer-1.yaml": { "mac_address": "E8:31:CD:3A:97:40" },
+```
+
+Het MAC-adres vind je in Home Assistant (`device_attr(device_id('sensor.…'),
+'connections')`) of je leest het af aan de oorspronkelijke bestandsnaam: een
+config die `esphome-web-3a9740.yaml` heet, hoort bij een apparaat waarvan het
+MAC eindigt op `3A:97:40`.
+
+> Let op dat de add-on dit bestand ook zelf schrijft. Bewerk het liever niet
+> terwijl er een build loopt; je wijziging kan overschreven worden.
+
+### Hernoemen met deep sleep: het venster is te klein
+
+*Rename hostname* compileert en uploadt in één keer. Bij een apparaat dat na
+tien seconden weer gaat slapen, is dat een race die je verliest:
+
+```
+INFO Connecting to 192.168.1.125 port 3232...
+WARNING ... failed: [Errno 113] No route to host
+ERROR Upload failed after 3 attempts
+WARNING Failed to upload to ['lily-2.local']
+```
+
+Twee dingen die het wél laten lukken:
+
+1. **Houd het apparaat wakker.** Wek het met de buitenste knop en druk daarna
+   op de onderhoudsknop (de stay-awake-vlag uit hoofdstuk 6). Zonder die tweede
+   druk slaapt hij midden in de upload.
+2. **Zet de DHCP-lease vast en gebruik `use_address`.** Het adres in de
+   foutmelding hierboven (.125) was een oude lease; mDNS gaf een adres waar
+   niets meer luisterde. Met een vast adres in de config valt die hele laag weg:
+
+   ```yaml
+   wifi:
+     use_address: 192.168.1.106
+   ```
+
+Een mislukte rename draait netjes terug — bestandsnaam en `name:` blijven zoals
+ze waren, en de gecompileerde build blijft in de cache staan. De tweede poging
+gaat daardoor vrijwel meteen naar het uploaden.
+
+### Wat een hernoeming kost aan entiteiten
+
+Alleen `esphome: name:` wijzigen raakt de entiteiten niet: hun unique_id is
+opgebouwd uit het MAC-adres en de object_id, en die object_id komt van de
+**entiteitsnaam**. Verander je die namen wél (bijvoorbeeld omdat ze het oude
+apparaat als voorvoegsel dragen), dan krijg je nieuwe entiteiten en blijven de
+oude als "niet beschikbaar" achter.
+
+Meteen goed doen scheelt een tweede ronde: zet `friendly_name` op het apparaat
+en laat het voorvoegsel uit de entiteitsnamen wég. Home Assistant plakt de
+apparaatnaam er zelf voor. Doe je allebei, dan krijg je namen als
+"Lily-2 Lily-2 Battery".

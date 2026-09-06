@@ -1,17 +1,31 @@
+# ============================================================================
+# Stroomwijzer - gedeelde basisconfiguratie
+# ============================================================================
+# Alle logica van het dashboard staat hier. Per apparaat is er een dun
+# bestand in de map hierboven dat alleen de naam en het OTA-adres zet en dit
+# bestand als package binnenhaalt:
+#
+#   substitutions:
+#     esp_name: Stroomwijzer 1
+#     esp_hostname: stroomwijzer-1
+#   packages:
+#     base: !include packages/stroomwijzer-base.yaml
+#
+# Substituties uit het apparaatbestand winnen van die hieronder, dus de
+# waarden hier zijn defaults.
+#
+# Dit bestand staat bewust in packages/ en niet ernaast: ESPHome Builder toont
+# alleen de yaml-bestanden uit de hoofdmap als apparaat, en deze base hoort
+# daar niet bij - los compileren lukt niet, want ${esp_name} is dan leeg.
+# ============================================================================
+
 substitutions:
-  esp_name: T5 Prijzen        # weergavenaam in Home Assistant
-  esp_hostname: t5-prijzen    # hostname / mDNS-naam
-
-  # Optioneel: vast IP. Laat staan als commentaar voor DHCP.
-  #ip_address: 192.168.1.50
-  #ip_gw: 192.168.1.1
-  #ip_netmask: 255.255.255.0
-
   run_time: 2min        # veiligheidsklep: hierna wordt sowieso geslapen, ook als er iets misgaat
   fallback_sleep: 20min # noodval-slaapduur als de tijd nog niet gesynchroniseerd is
 
 esphome:
   name: ${esp_hostname}
+  friendly_name: ${esp_name}
 
 esp32:
   board: esp32dev
@@ -102,10 +116,10 @@ font:
 
 button:
   - platform: restart
-    name: "${esp_name} Restart"
+    name: "Herstart"
 
   - platform: template
-    name: "${esp_name} Refresh"
+    name: "Ververs scherm"
     icon: "mdi:update"
     on_press:
       then:
@@ -120,7 +134,7 @@ binary_sensor:
       number: GPIO39
       inverted: true
       allow_other_uses: true
-    name: "${esp_name} Button 1"
+    name: "Knop rechts"
     on_press:
       then:
         - component.update: t5_display
@@ -132,7 +146,7 @@ binary_sensor:
     pin:
       number: GPIO34
       inverted: true
-    name: "${esp_name} Button 2"
+    name: "Knop onderhoud"
     on_press:
       then:
         - globals.set:
@@ -144,7 +158,7 @@ binary_sensor:
     pin:
       number: GPIO35
       inverted: true
-    name: "${esp_name} Button 3"
+    name: "Knop midden"
 
     # De MIDDELSTE knop (GPIO35) schakelt het ververstempo om. Werkt alleen
     # terwijl het apparaat wakker is (alleen GPIO39 kan wekken), dus: eerst
@@ -161,7 +175,7 @@ binary_sensor:
 sensor:
   - platform: adc
     pin: GPIO36
-    name: "${esp_name} Battery Voltage"
+    name: "Accuspanning"
     id: batt_volt
     attenuation: 12db
     update_interval: 300s
@@ -169,7 +183,7 @@ sensor:
       - multiply: 2
 
   - platform: template
-    name: "${esp_name} Battery"
+    name: "Accu"
     id: batt
     unit_of_measurement: "%"
     accuracy_decimals: 0

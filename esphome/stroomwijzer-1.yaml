@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# Stroomwijzer 1 - Lilygo T5 4.7"
+# ---------------------------------------------------------------------------
+# Alleen wat per apparaat verschilt. Alle logica staat in
+# packages/stroomwijzer-base.yaml - wijzig het dashboard daar, dan landt het meteen
+# op allebei de apparaten.
+# ---------------------------------------------------------------------------
+substitutions:
+  esp_name: Stroomwijzer 1          # weergavenaam in Home Assistant
+  esp_hostname: stroomwijzer-1      # hostname / mDNS-naam
+
+  # Optioneel: vast IP. Laat staan als commentaar voor DHCP.
+  #ip_address: 192.168.1.50
+  #ip_gw: 192.168.1.1
+  #ip_netmask: 255.255.255.0
+
+packages:
+  base: !include packages/stroomwijzer-base.yaml
+
+# Vast adres voor OTA. Met deep sleep is mDNS onbetrouwbaar: het apparaat is
+# maar een paar seconden per uur bereikbaar, en juist dan moet de upload er
+# meteen bij kunnen. Zet de DHCP-lease van dit apparaat vast op dit adres.
+wifi:
+  use_address: 192.168.1.106

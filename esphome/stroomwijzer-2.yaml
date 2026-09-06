@@ -1,0 +1,23 @@
+# ---------------------------------------------------------------------------
+# Stroomwijzer 2 - Lilygo T5 4.7"
+# ---------------------------------------------------------------------------
+# Alleen wat per apparaat verschilt. Alle logica staat in
+# packages/stroomwijzer-base.yaml - wijzig het dashboard daar, dan landt het meteen
+# op allebei de apparaten.
+# ---------------------------------------------------------------------------
+substitutions:
+  esp_name: Stroomwijzer 2          # weergavenaam in Home Assistant
+  esp_hostname: stroomwijzer-2      # hostname / mDNS-naam
+
+  # Optioneel: vast IP. Laat staan als commentaar voor DHCP.
+  #ip_address: 192.168.1.50
+  #ip_gw: 192.168.1.1
+  #ip_netmask: 255.255.255.0
+
+packages:
+  base: !include packages/stroomwijzer-base.yaml
+
+# Vast adres voor OTA, net als bij stroomwijzer-1. Vul in zodra dit apparaat
+# een vaste DHCP-lease heeft.
+#wifi:
+#  use_address: 192.168.1.107

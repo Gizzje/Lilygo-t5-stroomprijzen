@@ -1,4 +1,4 @@
-# LilyGo T5 4.7" stroomprijzen-dashboard
+# Stroomwijzer — LilyGo T5 4.7" stroomprijzen-dashboard
 
 Een e-paper dashboard dat de Nederlandse dynamische stroomprijzen toont op een
 LilyGo T5 4.7" — de **all-in prijs die je leverancier ook factureert**, niet de
@@ -194,15 +194,38 @@ staan. Liever niets dan een getal dat het verkeerde zegt.
 
 ### 2. ESPHome
 
-1. Kopieer `esphome/t5-stroomprijzen.yaml` en de map
-   `esphome/components/` naar je ESPHome-configmap.
+1. Kopieer de inhoud van `esphome/` naar je ESPHome-configmap:
+   ```
+   stroomwijzer-1.yaml            ← per apparaat: naam + OTA-adres
+   stroomwijzer-2.yaml
+   packages/stroomwijzer-base.yaml ← alle logica
+   components/lilygo_t5_47_display/
+   ```
 2. Kopieer `esphome/secrets.yaml.example` naar `secrets.yaml` en vul je
    wifi- en OTA-gegevens in.
-3. Pas bovenin `esp_name` / `esp_hostname` aan naar smaak.
+3. Pas in het apparaatbestand `esp_name` / `esp_hostname` aan naar smaak, en
+   zet `use_address` op het vaste IP van dat apparaat.
 4. Compileer en flash. **De eerste keer via USB**, daarna kan het via OTA.
 
-De map `components/` moet naast je device-YAML staan; `external_components`
-verwijst er relatief naar.
+**Waarom een `packages/`-submap?** ESPHome Builder toont elk yaml-bestand in de
+hoofdmap als apparaat. Zet je de gedeelde base daar neer, dan krijg je er een
+derde "apparaat" bij dat niet compileert (`${esp_name}` is dan leeg). In een
+submap gebeurt dat niet.
+
+De map `components/` moet naast je apparaatbestanden staan;
+`external_components` verwijst er relatief naar — óók vanuit de base in
+`packages/`, want ESPHome rekent dat pad vanaf de map van het hoofdbestand.
+
+**Vast IP is geen luxe.** Met deep sleep is het apparaat maar een paar seconden
+per uur bereikbaar. mDNS krijgt in die tijd vaak geen antwoord meer, dus een
+OTA loopt op "no route to host". Zet de DHCP-lease vast en vul `use_address`
+in; dan gaat de upload rechtstreeks naar dat adres.
+
+> **Tip voor een apparaat dat al draait en een nieuwe naam moet krijgen:**
+> gebruik *Rename hostname* uit het ⋮-menu van ESPHome Builder. Die zet het
+> apparaat via OTA om op de nieuwe naam. Zorg wel dat het wakker blijft: wek
+> het met de buitenste knop en druk daarna op de onderhoudsknop, anders valt
+> hij midden in de upload in slaap.
 
 ## Hardware
 
@@ -213,7 +236,7 @@ epdiy-boarddefinitie.
 | GPIO | Functie |
 |---|---|
 | 39 | Wake uit deep sleep + **wisselen tussen vandaag en morgen** (knop uiterst rechts) |
-| 34 | Stay-awake: houdt het apparaat wakker voor onderhoud/OTA |
+| 34 | Stay-awake: houdt het apparaat wakker voor onderhoud/OTA (knop tweede van rechts) |
 | 35 | Ververstempo: elk uur ↔ 1x per dag (middelste knop) |
 | 36 | Accuspanning (ADC, deler x2) |
 
@@ -257,6 +280,8 @@ Kort samengevat; de volledige uitleg staat in
   de opslag is een contractvoorwaarde en de energiebelasting wijzigt jaarlijks.
 * **Dunne fonts ogen grijs op e-paper.** Niet de kleur of de grootte is het
   probleem maar het gewicht; alle fonts staan daarom op `@700`.
+* **Zet de gedeelde base in een `packages/`-submap**, anders toont ESPHome
+  Builder hem als een apparaat dat niet compileert.
 * **Wake-momenten zijn absolute klokmomenten**, geen "nu + 1 uur" — anders
   loopt de markering van het huidige uur permanent scheef met het moment waarop
   je de modus aanzette.
