@@ -341,6 +341,5 @@ Deze repo bevat afgeleid werk:
   (**LGPL-3.0**), dat als PlatformIO-library tijdens de build wordt
   opgehaald - er staat geen epdiy-broncode in deze repo.
 
-Er is bewust nog **geen LICENSE-bestand** toegevoegd: dat is een keuze van de
-eigenaar van deze repo. Houd er wel rekening mee dat de afgeleide component een
-GPL-3.0-compatibele licentie vereist.
+Deze repo staat daarom onder **GPL-3.0**, zie [LICENSE](LICENSE) — de enige
+licentie die met de afgeleide component compatibel is.
