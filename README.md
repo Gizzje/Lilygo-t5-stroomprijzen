@@ -3,8 +3,10 @@
 Een e-paper dashboard dat de Nederlandse dynamische stroomprijzen toont op een
 LilyGo T5 4.7" — de **all-in prijs die je leverancier ook factureert**, niet de
 kale spotprijs. Draait op ESPHome, haalt zijn data uit Home Assistant
-(Zonneplan), en werkt op accu: het apparaat slaapt en wordt twee keer per dag
-wakker om het scherm bij te werken. De gasprijs van de dag staat er ook bij.
+(Zonneplan), en werkt op accu: het apparaat slaapt en wordt standaard één keer
+per dag wakker om het scherm bij te werken — met één knop zet je dat om naar
+elk heel uur. De gasprijs van de dag staat er ook bij. Twee apparaten delen
+dezelfde configuratie; er staan er hier twee klaar.
 
 ![Dashboard - vandaag, 1x per dag](docs/preview-vandaag.png)
 
@@ -21,11 +23,12 @@ tussen goedkoopste en duurste uur — zegt wat je met timing kunt winnen; het
 gemiddelde stond daar eerst, maar dat is al af te lezen aan de stippellijn
 "gem" in de grafiek.
 
-Boven de balk van het huidige uur staat een pijltje; het rondje markeert het
-goedkoopste uur. Donkerder grijs = duurder. Links van de huidige prijs staat de
-gasdagprijs. Bij de "morgen"-weergave vervalt de huidige prijs rechtsboven en
-komt daar het goedkoopste moment van morgen te staan (de gasprijs vervalt daar,
-want voor morgen is er nog geen gasdagprijs):
+Donkerder grijs = duurder, en het rondje markeert in beide standen het
+goedkoopste uur. Het pijltje boven de balk van het huidige uur hoort bij de
+uurmodus. Links van het grote getal staat de gasdagprijs.
+
+Bij de "morgen"-weergave staat rechtsboven het goedkoopste moment van morgen.
+De gasprijs vervalt daar, want voor morgen is er nog geen gasdagprijs:
 
 ![Dashboard - morgen](docs/preview-morgen.png)
 
@@ -46,7 +49,7 @@ beschrijving van elk probleem en waarom de fix werkt:
 Dat bestand is waarschijnlijk nuttiger dan de dashboardcode zelf als je dit
 scherm voor iets anders wilt gebruiken.
 
-Getest op ESPHome 2026.8.1 / ESP-IDF 5.5.5, ESP32-WROVER-E rev 3.0,
+Getest op ESPHome 2026.8.2 / ESP-IDF 5.5.5, ESP32-WROVER-E rev 3.0,
 8 MB PSRAM, ED047TC1-paneel (960x540).
 
 ## Hoe het werkt
@@ -91,7 +94,10 @@ Drie details die makkelijk misgaan:
 
 ## Ververs-schema
 
-Bewust niet elk uur - dat kost accu zonder iets toe te voegen.
+Twee schema's die los van elkaar staan: hoe vaak **Home Assistant** de prijzen
+ververst, en hoe vaak **het scherm** getekend wordt.
+
+### De sensoren in Home Assistant
 
 | Wanneer | Beide sensoren |
 |---|---|
@@ -106,11 +112,21 @@ day-ahead-fetch. Het half-uurritme is er vooral voor zelfherstel: staat de
 integratie bij HA-opstart nog niet klaar, dan is de sensor binnen 30 minuten
 alsnog gevuld.
 
-Het apparaat wordt standaard alleen om **00:00** wakker — dat is het moment
+### Het scherm
+
+Standaard wordt het apparaat alleen om **00:00** wakker — dat is het moment
 waarop de datum omslaat. Met de middelste knop zet je het op **elk heel uur**
-(zie Bediening). Bij die geplande wakes kiest het scherm zelf de
-logische weergave: 's nachts vandaag, vanaf 22:00 morgen. Zo zie je 's avonds
-of je de vaatwasser 's nachts moet laten draaien of beter tot morgenmiddag
+(zie Bediening).
+
+> Het apparaat wekt om 00:00, precies wanneer de sensoren ook verversen. Dat is
+> geen race die je kunt verliezen: HA's scheduler is er eerder bij dan het
+> apparaat, dat eerst nog moet booten en verbinden. En komt er tóch later nog
+> een nieuwe waarde binnen, dan tekent het scherm gewoon opnieuw.
+
+Bij een geplande wake kiest het scherm zelf welke dag het toont: 's nachts
+vandaag, vanaf 22:00 morgen. In de standaardstand valt die 22:00-wake niet, dus
+daar zie je altijd vandaag; in de uurmodus laten de wakes van 22:00 en 23:00 je
+zien of je de vaatwasser 's nachts moet laten draaien of beter tot morgenmiddag
 kunt wachten.
 
 ## Bediening
@@ -134,8 +150,10 @@ makkelijkst te vinden is, en deep sleep verlaten via een reset kost net zoveel
 als via de wake-pin.
 
 Alleen een **geplande wake** kiest zelf welke dag: 's nachts vandaag, vanaf
-22:00 morgen. De firmware onderscheidt dat aan de wake-oorzaak - is die
-`ESP_SLEEP_WAKEUP_TIMER`, dan is het de klok; al het andere is een mens.
+22:00 morgen — dat laatste dus alleen in de uurmodus, want in de standaardstand
+is er maar één geplande wake. De firmware onderscheidt geplande van menselijke
+wakes aan de wake-oorzaak: is die `ESP_SLEEP_WAKEUP_TIMER`, dan is het de klok;
+al het andere is een mens.
 
 > Ook een herstart na een OTA-update telt als knopdruk, dus vlak na het
 > flashen kan het scherm op "morgen" springen. Eén druk zet het terug.
@@ -144,7 +162,7 @@ Zijn de prijzen van morgen nog niet gepubliceerd, dan toont het scherm
 "Prijzen van morgen nog niet bekend" in plaats van verouderde cijfers. De
 firmware vergelijkt daarvoor het `datum`-attribuut van de sensor met zijn eigen
 berekende datum van morgen; komen die niet overeen, dan is de sensor blijven
-hangen op een mislukte fetch.
+hangen op een oudere render en zijn de cijfers niet van morgen.
 
 ### De middelste knop: het ververstempo
 
@@ -166,13 +184,13 @@ absolute klokmomenten (09:00, 10:00, …), geen "nu plus een uur". Schakel je om
 09:45 om, dan is de eerstvolgende tekening dus 10:00 — anders zou de markering
 van het huidige uur en de "nu"-prijs structureel drie kwartier scheef staan.
 
-Reken op ongeveer **tienmaal het accuverbruik** van de zuinige stand: ~5 minuten
-per dag wakker (inclusief het OTA-venster van 10 s per wake) tegenover ~30
-seconden. Nog eens drukken zet hem terug.
+Dat kost accu: ~5 minuten per dag wakker (20 wakes van ~14 s, inclusief het
+OTA-venster van 10 s) tegenover ~15 seconden in de standaardstand. Ruwweg
+**twintig keer zoveel**. Nog eens drukken zet hem terug.
 
 De keuze staat in een global met `restore_value: yes` en overleeft dus deep
 sleep. Welke stand actief is lees je linksonder op het scherm af:
-`bijgewerkt 14:00 - elk uur` of `- 2x per dag`.
+`bijgewerkt 14:00 - elk uur` of `- 1x per dag`.
 
 > **De middelste knop kan het apparaat niet wekken** — alleen IO39 kan dat. Wek
 > hem dus eerst met de linker- of rechterknop, en druk daarna op de middelste.
@@ -236,7 +254,7 @@ De map `components/` moet naast je apparaatbestanden staan;
 `packages/`, want ESPHome rekent dat pad vanaf de map van het hoofdbestand.
 
 **Vast IP is geen luxe.** Met deep sleep is het apparaat maar een paar seconden
-per uur bereikbaar. mDNS krijgt in die tijd vaak geen antwoord meer, dus een
+per dag bereikbaar — per uur als de uurmodus aanstaat. mDNS krijgt in die tijd vaak geen antwoord meer, dus een
 OTA loopt op "no route to host". Zet de DHCP-lease vast en vul `use_address`
 in; dan gaat de upload rechtstreeks naar dat adres.
 
@@ -259,10 +277,11 @@ epdiy-boarddefinitie.
 | 35 | Ververstempo: elk uur ↔ 1x per dag (middelste knop) |
 | 36 | Accuspanning (ADC, deler x2) |
 
-De rechterknop moest de wisselknop worden omdat hij als enige het apparaat kan wekken:
+De rechterknop moest de wisselknop worden omdat hij de enige **wake-pin** is:
 de ESP32 ext1-wakeup staat op `ALL_LOW`, en dat betekent letterlijk "wek als
 *alle* opgegeven pinnen laag zijn". Een tweede pin toevoegen zou betekenen dat
-je twee knoppen tegelijk moet indrukken.
+je twee knoppen tegelijk moet indrukken. (De resetknop wekt het apparaat ook,
+maar dat is een herstart en geen wake-pin.)
 
 ## Layout aanpassen zonder te flashen
 
